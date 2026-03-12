@@ -1,0 +1,168 @@
+# GAAI Active Backlog
+# Execution queue — contains only Stories that are validated and ready for Delivery.
+
+items:
+  - id: E01S01
+    epic: E01
+    title: "Project scaffolding with fang/cobra and serve command"
+    priority: high
+    status: done
+    started_at: "2026-03-12T10:30:00Z"
+    completed_at: "2026-03-12T10:35:00Z"
+    artefact: contexts/artefacts/stories/E01S01.story.md
+    dependencies: []
+    notes: "Discovery 2026-03-12 — foundation, must be first"
+
+  - id: E01S02
+    epic: E01
+    title: "TrueNAS WebSocket connection and authentication"
+    priority: high
+    status: done
+    started_at: "2026-03-12T10:40:00Z"
+    completed_at: "2026-03-12T10:45:00Z"
+    artefact: contexts/artefacts/stories/E01S02.story.md
+    dependencies: [E01S01]
+    notes: "Discovery 2026-03-12 — DEC-2 governs client choice"
+
+  - id: E01S03
+    epic: E01
+    title: "MCP server initialization with stdio transport"
+    priority: high
+    status: done
+    started_at: "2026-03-12T10:50:00Z"
+    completed_at: "2026-03-12T10:55:00Z"
+    artefact: contexts/artefacts/stories/E01S03.story.md
+    dependencies: [E01S01, E01S02]
+    notes: "Discovery 2026-03-12 — DEC-1 governs MCP library choice"
+
+  - id: E02S01
+    epic: E02
+    title: "List and inspect pools"
+    priority: medium
+    status: done
+    started_at: "2026-03-12T11:00:00Z"
+    completed_at: "2026-03-12T11:10:00Z"
+    artefact: contexts/artefacts/stories/E02S01.story.md
+    dependencies: [E01S03]
+    notes: "Discovery 2026-03-12"
+
+  - id: E02S02
+    epic: E02
+    title: "List and inspect datasets"
+    priority: medium
+    status: done
+    started_at: "2026-03-12T11:00:00Z"
+    completed_at: "2026-03-12T11:10:00Z"
+    artefact: contexts/artefacts/stories/E02S02.story.md
+    dependencies: [E01S03]
+    notes: "Discovery 2026-03-12"
+
+  - id: E02S03
+    epic: E02
+    title: "List and inspect snapshots"
+    priority: medium
+    status: done
+    started_at: "2026-03-12T11:00:00Z"
+    completed_at: "2026-03-12T11:10:00Z"
+    artefact: contexts/artefacts/stories/E02S03.story.md
+    dependencies: [E01S03]
+    notes: "Discovery 2026-03-12"
+
+  - id: E03S01
+    epic: E03
+    title: "Create and delete datasets"
+    priority: medium
+    status: done
+    started_at: "2026-03-12T11:00:00Z"
+    completed_at: "2026-03-12T11:10:00Z"
+    artefact: contexts/artefacts/stories/E03S01.story.md
+    dependencies: [E02S02]
+    notes: "Discovery 2026-03-12"
+
+  - id: E03S02
+    epic: E03
+    title: "Create and delete snapshots"
+    priority: medium
+    status: done
+    started_at: "2026-03-12T11:00:00Z"
+    completed_at: "2026-03-12T11:10:00Z"
+    artefact: contexts/artefacts/stories/E03S02.story.md
+    dependencies: [E02S03]
+    notes: "Discovery 2026-03-12"
+
+  - id: E04S01
+    epic: E04
+    title: "List and inspect SMB and NFS shares"
+    priority: medium
+    status: done
+    started_at: "2026-03-12T11:00:00Z"
+    completed_at: "2026-03-12T11:10:00Z"
+    artefact: contexts/artefacts/stories/E04S01.story.md
+    dependencies: [E01S03]
+    notes: "Discovery 2026-03-12"
+
+  - id: E04S02
+    epic: E04
+    title: "Create, update, and delete shares"
+    priority: low
+    status: done
+    started_at: "2026-03-12T11:00:00Z"
+    completed_at: "2026-03-12T11:10:00Z"
+    artefact: contexts/artefacts/stories/E04S02.story.md
+    dependencies: [E04S01]
+    notes: "Discovery 2026-03-12"
+
+  - id: E05S01
+    epic: E05
+    title: "System information and disk health"
+    priority: medium
+    status: done
+    started_at: "2026-03-12T11:00:00Z"
+    completed_at: "2026-03-12T11:10:00Z"
+    artefact: contexts/artefacts/stories/E05S01.story.md
+    dependencies: [E01S03]
+    notes: "Discovery 2026-03-12"
+
+  - id: E05S02
+    epic: E05
+    title: "Alert listing and management"
+    priority: medium
+    status: done
+    started_at: "2026-03-12T11:00:00Z"
+    completed_at: "2026-03-12T11:10:00Z"
+    artefact: contexts/artefacts/stories/E05S02.story.md
+    dependencies: [E01S03]
+    notes: "Discovery 2026-03-12"
+
+  - id: E06S01
+    epic: E06
+    title: "List and inspect apps"
+    priority: low
+    status: done
+    started_at: "2026-03-12T11:00:00Z"
+    completed_at: "2026-03-12T11:10:00Z"
+    artefact: contexts/artefacts/stories/E06S01.story.md
+    dependencies: [E01S03]
+    notes: "Discovery 2026-03-12"
+
+  - id: E06S02
+    epic: E06
+    title: "App lifecycle management (start/stop/restart)"
+    priority: low
+    status: done
+    started_at: "2026-03-12T11:00:00Z"
+    completed_at: "2026-03-12T11:10:00Z"
+    artefact: contexts/artefacts/stories/E06S02.story.md
+    dependencies: [E06S01]
+    notes: "Discovery 2026-03-12"
+
+  - id: E07S01
+    epic: E07
+    title: "Read-only flag prevents destructive tool registration"
+    priority: high
+    status: done
+    started_at: "2026-03-12T12:00:00Z"
+    completed_at: "2026-03-12T12:10:00Z"
+    artefact: contexts/artefacts/stories/E07S01.story.md
+    dependencies: [E01S03]
+    notes: "Discovery 2026-03-12 — safety feature for AI-assisted NAS management"
