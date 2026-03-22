@@ -8,7 +8,7 @@ import (
 	"truenas-mcp/truenas"
 )
 
-func registerDatasetReadTools(s *mcp.Server, client *truenas.Client) {
+func registerDatasetReadTools(s *mcp.Server, client truenas.Caller) {
 	s.AddTool(&mcp.Tool{
 		Name:        "truenas_dataset_list",
 		Description: "List datasets with name, used space, available space, mountpoint, and compression. Optionally filter by pool.",
@@ -49,7 +49,7 @@ func registerDatasetReadTools(s *mcp.Server, client *truenas.Client) {
 
 }
 
-func registerDatasetWriteTools(s *mcp.Server, client *truenas.Client) {
+func registerDatasetWriteTools(s *mcp.Server, client truenas.Caller) {
 	s.AddTool(&mcp.Tool{
 		Name:        "truenas_dataset_create",
 		Description: "Create a new ZFS dataset. Requires the full path (e.g. tank/newdata).",

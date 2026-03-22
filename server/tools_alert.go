@@ -8,7 +8,7 @@ import (
 	"truenas-mcp/truenas"
 )
 
-func registerAlertReadTools(s *mcp.Server, client *truenas.Client) {
+func registerAlertReadTools(s *mcp.Server, client truenas.Caller) {
 	s.AddTool(&mcp.Tool{
 		Name:        "truenas_alert_list",
 		Description: "List active alerts with level (info/warning/critical), message, datetime, and dismissed status. Optionally filter by level.",
@@ -30,7 +30,7 @@ func registerAlertReadTools(s *mcp.Server, client *truenas.Client) {
 
 }
 
-func registerAlertWriteTools(s *mcp.Server, client *truenas.Client) {
+func registerAlertWriteTools(s *mcp.Server, client truenas.Caller) {
 	s.AddTool(&mcp.Tool{
 		Name:        "truenas_alert_dismiss",
 		Description: "Dismiss an alert by ID.",

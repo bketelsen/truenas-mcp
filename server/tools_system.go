@@ -61,7 +61,7 @@ func jsonResult(raw json.RawMessage) (*mcp.CallToolResult, error) {
 	}, nil
 }
 
-func registerSystemTools(s *mcp.Server, client *truenas.Client) {
+func registerSystemTools(s *mcp.Server, client truenas.Caller) {
 	s.AddTool(&mcp.Tool{
 		Name:        "truenas_system_info",
 		Description: "Get TrueNAS system information including hostname, version, uptime, and platform.",

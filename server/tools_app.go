@@ -8,7 +8,7 @@ import (
 	"truenas-mcp/truenas"
 )
 
-func registerAppReadTools(s *mcp.Server, client *truenas.Client) {
+func registerAppReadTools(s *mcp.Server, client truenas.Caller) {
 	s.AddTool(&mcp.Tool{
 		Name:        "truenas_app_list",
 		Description: "List all installed apps with name, version, status (running/stopped), and update availability.",
@@ -42,7 +42,7 @@ func registerAppReadTools(s *mcp.Server, client *truenas.Client) {
 
 }
 
-func registerAppWriteTools(s *mcp.Server, client *truenas.Client) {
+func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 	s.AddTool(&mcp.Tool{
 		Name:        "truenas_app_start",
 		Description: "Start a stopped app by name.",

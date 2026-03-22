@@ -9,7 +9,7 @@ import (
 	"truenas-mcp/truenas"
 )
 
-func registerSnapshotReadTools(s *mcp.Server, client *truenas.Client) {
+func registerSnapshotReadTools(s *mcp.Server, client truenas.Caller) {
 	s.AddTool(&mcp.Tool{
 		Name:        "truenas_snapshot_list",
 		Description: "List snapshots for a specific dataset with name, creation time, and referenced size.",
@@ -50,7 +50,7 @@ func registerSnapshotReadTools(s *mcp.Server, client *truenas.Client) {
 
 }
 
-func registerSnapshotWriteTools(s *mcp.Server, client *truenas.Client) {
+func registerSnapshotWriteTools(s *mcp.Server, client truenas.Caller) {
 	s.AddTool(&mcp.Tool{
 		Name:        "truenas_snapshot_create",
 		Description: "Create a ZFS snapshot. Auto-generates a timestamp name if omitted.",
