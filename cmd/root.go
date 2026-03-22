@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
+	"truenas-mcp/version"
 )
 
 func NewRootCmd() *cobra.Command {
@@ -9,7 +10,7 @@ func NewRootCmd() *cobra.Command {
 		Use:     "truenas-mcp",
 		Short:   "MCP server for TrueNAS SCALE",
 		Long:    "An MCP (Model Context Protocol) server that exposes TrueNAS SCALE management capabilities to AI assistants.",
-		Version: "0.1.0",
+		Version: version.Version,
 	}
 
 	cmd.AddCommand(NewServeCmd())

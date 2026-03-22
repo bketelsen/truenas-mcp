@@ -6,6 +6,7 @@ import (
 
 	"charm.land/fang/v2"
 	"truenas-mcp/cmd"
+	"truenas-mcp/version"
 )
 
 func main() {
@@ -14,7 +15,7 @@ func main() {
 	if err := fang.Execute(
 		context.Background(),
 		root,
-		fang.WithVersion("0.1.0"),
+		fang.WithVersion(version.Version),
 		fang.WithNotifySignal(os.Interrupt),
 	); err != nil {
 		os.Exit(1)

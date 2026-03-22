@@ -5,6 +5,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"truenas-mcp/truenas"
+	"truenas-mcp/version"
 )
 
 // New creates an MCP server with TrueNAS tools registered.
@@ -12,7 +13,7 @@ import (
 func New(client *truenas.Client, readOnly bool) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{
 		Name:    "truenas-mcp",
-		Version: "0.1.0",
+		Version: version.Version,
 	}, nil)
 
 	// Read-only tools — always registered
