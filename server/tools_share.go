@@ -8,7 +8,7 @@ import (
 	"truenas-mcp/truenas"
 )
 
-func registerShareReadTools(s *mcp.Server, client *truenas.Client) {
+func registerShareReadTools(s *mcp.Server, client truenas.Caller) {
 	s.AddTool(&mcp.Tool{
 		Name:        "truenas_smb_list",
 		Description: "List all SMB shares with name, path, and enabled status.",
@@ -35,7 +35,7 @@ func registerShareReadTools(s *mcp.Server, client *truenas.Client) {
 
 }
 
-func registerShareWriteTools(s *mcp.Server, client *truenas.Client) {
+func registerShareWriteTools(s *mcp.Server, client truenas.Caller) {
 	s.AddTool(&mcp.Tool{
 		Name:        "truenas_smb_create",
 		Description: "Create an SMB share. The path must point to an existing dataset mountpoint.",

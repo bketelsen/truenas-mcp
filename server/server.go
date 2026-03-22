@@ -10,7 +10,7 @@ import (
 
 // New creates an MCP server with TrueNAS tools registered.
 // When readOnly is true, only read-only tools (list, get, inspect) are registered.
-func New(client *truenas.Client, readOnly bool) *mcp.Server {
+func New(client truenas.Caller, readOnly bool) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{
 		Name:    "truenas-mcp",
 		Version: version.Version,

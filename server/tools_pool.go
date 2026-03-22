@@ -8,7 +8,7 @@ import (
 	"truenas-mcp/truenas"
 )
 
-func registerPoolTools(s *mcp.Server, client *truenas.Client) {
+func registerPoolTools(s *mcp.Server, client truenas.Caller) {
 	s.AddTool(&mcp.Tool{
 		Name:        "truenas_pool_list",
 		Description: "List all ZFS pools with name, status, size, and health.",

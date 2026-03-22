@@ -7,6 +7,12 @@ import (
 	"github.com/truenas/api_client_golang/truenas_api"
 )
 
+// Caller is the interface for making TrueNAS JSON-RPC calls.
+// *Client satisfies this interface.
+type Caller interface {
+	Call(method string, params ...interface{}) (json.RawMessage, error)
+}
+
 // Client wraps the TrueNAS WebSocket JSON-RPC client.
 type Client struct {
 	api *truenas_api.Client
