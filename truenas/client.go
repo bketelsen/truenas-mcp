@@ -37,11 +37,6 @@ func (c *Client) Close() {
 	}
 }
 
-// API returns the underlying TrueNAS API client for making calls.
-func (c *Client) API() *truenas_api.Client {
-	return c.api
-}
-
 // Call invokes a TrueNAS JSON-RPC method and returns the result as raw JSON.
 // It handles the envelope parsing and error extraction.
 func (c *Client) Call(method string, params ...interface{}) (json.RawMessage, error) {
