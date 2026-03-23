@@ -30,7 +30,7 @@ func NewServeCmd() *cobra.Command {
 				return fmt.Errorf("TrueNAS API key is required (use --api-key or TRUENAS_API_KEY env var)")
 			}
 
-			fmt.Fprintf(cmd.ErrOrStderr(), "Connecting to TrueNAS at %s...\n", cfg.Host)
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Connecting to TrueNAS at %s...\n", cfg.Host)
 
 			client, err := truenas.Connect(cfg.Host, cfg.APIKey)
 			if err != nil {
@@ -38,14 +38,14 @@ func NewServeCmd() *cobra.Command {
 			}
 			defer client.Close()
 
-			fmt.Fprintf(cmd.ErrOrStderr(), "Connected and authenticated.\n")
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Connected and authenticated.\n")
 
 			mcpServer := server.New(client, cfg.ReadOnly)
 
 			if cfg.ReadOnly {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Starting MCP server on stdio (read-only mode)...\n")
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Starting MCP server on stdio (read-only mode)...\n")
 			} else {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Starting MCP server on stdio...\n")
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Starting MCP server on stdio...\n")
 			}
 			return server.Run(cmd.Context(), mcpServer)
 		},

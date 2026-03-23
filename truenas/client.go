@@ -29,7 +29,7 @@ func Connect(host, apiKey string) (*Client, error) {
 	}
 
 	if err := api.Login("", "", apiKey); err != nil {
-		api.Close()
+		_ = api.Close()
 		return nil, fmt.Errorf("authenticating with TrueNAS: %w", err)
 	}
 
@@ -39,7 +39,7 @@ func Connect(host, apiKey string) (*Client, error) {
 // Close cleanly shuts down the WebSocket connection.
 func (c *Client) Close() {
 	if c.api != nil {
-		c.api.Close()
+		_ = c.api.Close()
 	}
 }
 
