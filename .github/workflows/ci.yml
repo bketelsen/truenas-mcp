@@ -15,7 +15,7 @@ jobs:
         with:
           go-version-file: go.mod
           check-latest: true
-      - uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v8
 
   fmt-check:
     runs-on: ubuntu-latest
