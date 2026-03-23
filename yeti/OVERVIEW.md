@@ -39,10 +39,21 @@ main.go                  Entry point — uses Charm fang CLI framework
 | Package | Role |
 |---------|------|
 | `cmd` | CLI wiring via Cobra + Charm fang. Handles flag/env parsing. |
-| `truenas` | Thin wrapper around `github.com/truenas/api_client_golang`. Provides `Connect`, `Call`, `Close`. |
+| `truenas` | Thin wrapper around `github.com/truenas/api_client_golang`. Defines the `Caller` interface and provides `Connect`, `Call`, `Close`. |
 | `server` | MCP server construction and all tool definitions. Each `tools_*.go` file covers one domain. |
+| `version` | Single `Version` constant (`0.1.0`), used by the CLI framework. |
 
 ## Key Patterns
+
+### Caller Interface (Dependency Injection)
+
+The `truenas` package defines a `Caller` interface:
+```go
+type Caller interface {
+    Call(method string, params ...interface{}) (json.RawMessage, error)
+}
+```
+`*truenas.Client` satisfies this interface. All server functions (`server.New()` and every `register*Tools` function) accept `truenas.Caller` rather than the concrete client. This enables testing with a `mockCaller` that injects canned responses without a real TrueNAS connection.
 
 ### Tool Registration Pattern
 
@@ -99,6 +110,33 @@ Flags take precedence over defaults; env vars are used as default values for fla
 - SSL verification is disabled (self-signed certs common on NAS devices)
 - Authentication via API key (not username/password)
 - API call timeout: 30 seconds
+
+## Testing
+
+Tests use the `Caller` interface for dependency injection — no real TrueNAS server is needed.
+
+### Test Infrastructure (`server/mock_test.go`)
+
+- **`mockCaller`** — implements `truenas.Caller` with a `CallFunc` field for injecting per-test responses
+- **`callTool()`** — spins up a full MCP server + client via the SDK's `InMemoryTransport`, then calls a tool by name. This tests the complete path: tool registration → argument parsing → API call → response formatting
+- **`resultText()`** — extracts the text content from a `CallToolResult`
+
+### Test Organization
+
+Each `tools_*.go` file has a corresponding `tools_*_test.go` that tests both read and write tools. `helpers_test.go` covers the schema/arg parsing helpers. `server_test.go` tests `New()` for correct read-only vs read-write tool registration.
+
+## CI
+
+GitHub Actions workflow (`.github/workflows/ci.yml`) runs on push to `main` and on pull requests. Four parallel jobs:
+
+| Job | What it does |
+|-----|-------------|
+| `lint` | `golangci-lint` via `golangci-lint-action@v8` |
+| `fmt-check` | `gofmt -s -d .` — fails if unformatted code |
+| `test` | `make test` (includes `-race -count=1`) |
+| `build` | `make build` — verifies compilation |
+
+Go version is read from `go.mod` via `go-version-file`, keeping CI in sync automatically.
 
 ## MCP Tools Reference
 
