@@ -36,14 +36,14 @@ func callTool(t *testing.T, caller truenas.Caller, readOnly bool, toolName strin
 	if err != nil {
 		t.Fatalf("server connect: %v", err)
 	}
-	defer ss.Close()
+	defer func() { _ = ss.Close() }()
 
 	c := mcp.NewClient(&mcp.Implementation{Name: "test-client"}, nil)
 	cs, err := c.Connect(ctx, ct, nil)
 	if err != nil {
 		t.Fatalf("client connect: %v", err)
 	}
-	defer cs.Close()
+	defer func() { _ = cs.Close() }()
 
 	return cs.CallTool(ctx, &mcp.CallToolParams{
 		Name:      toolName,
