@@ -75,6 +75,12 @@ When `--read-only` is set (or `TRUENAS_READ_ONLY` env var is non-empty), mutatin
 - `args()` — extracts argument map from request
 - `jsonResult()` — wraps raw JSON as pretty-printed MCP text content
 
+### Lint Compliance: Intentionally Ignored Errors
+
+The codebase uses explicit blank-identifier assignments to satisfy `errcheck` lint rules for errors that are intentionally not handled:
+- `_, _ = fmt.Fprintf(...)` for stderr status messages where write failures are not actionable
+- `_ = api.Close()` for cleanup in error paths and deferred closes where close errors cannot be meaningfully handled
+
 ### TrueNAS API Mapping
 
 Tools map directly to TrueNAS JSON-RPC methods. The naming convention is:
