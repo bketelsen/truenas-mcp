@@ -16,7 +16,7 @@ type Caller interface {
 // Client wraps the TrueNAS WebSocket JSON-RPC client.
 type Client struct {
 	api     *truenas_api.Client
-	timeout int
+	timeout int64
 }
 
 // Connect establishes a WebSocket connection to TrueNAS and authenticates with an API key.
@@ -38,7 +38,7 @@ func Connect(host, apiKey string, timeout int) (*Client, error) {
 		return nil, fmt.Errorf("authenticating with TrueNAS: %w", err)
 	}
 
-	return &Client{api: api, timeout: timeout}, nil
+	return &Client{api: api, timeout: int64(timeout)}, nil
 }
 
 // Close cleanly shuts down the WebSocket connection.
