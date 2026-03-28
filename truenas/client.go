@@ -15,11 +15,16 @@ type Caller interface {
 
 // Client wraps the TrueNAS WebSocket JSON-RPC client.
 type Client struct {
-	api *truenas_api.Client
+	api     *truenas_api.Client
+	timeout int64
 }
 
 // Connect establishes a WebSocket connection to TrueNAS and authenticates with an API key.
-func Connect(host, apiKey string) (*Client, error) {
+// The timeout parameter specifies the per-call timeout in seconds for API requests.
+func Connect(host, apiKey string, timeout int) (*Client, error) {
+	if timeout <= 0 {
+		timeout = 30
+	}
 	url := fmt.Sprintf("wss://%s/api/current", host)
 
 	// verifySSL=false to support self-signed certs common on NAS devices
@@ -33,7 +38,7 @@ func Connect(host, apiKey string) (*Client, error) {
 		return nil, fmt.Errorf("authenticating with TrueNAS: %w", err)
 	}
 
-	return &Client{api: api}, nil
+	return &Client{api: api, timeout: int64(timeout)}, nil
 }
 
 // Close cleanly shuts down the WebSocket connection.
@@ -50,7 +55,7 @@ func (c *Client) Call(method string, params ...interface{}) (json.RawMessage, er
 		params = []interface{}{}
 	}
 
-	raw, err := c.api.Call(method, 30, params)
+	raw, err := c.api.Call(method, c.timeout, params)
 	if err != nil {
 		return nil, fmt.Errorf("calling %s: %w", method, err)
 	}

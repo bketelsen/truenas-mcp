@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/spf13/cobra"
 	"truenas-mcp/server"
@@ -13,6 +14,7 @@ type serveConfig struct {
 	Host     string
 	APIKey   string
 	ReadOnly bool
+	Timeout  int
 }
 
 func NewServeCmd() *cobra.Command {
@@ -32,7 +34,7 @@ func NewServeCmd() *cobra.Command {
 
 			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Connecting to TrueNAS at %s...\n", cfg.Host)
 
-			client, err := truenas.Connect(cfg.Host, cfg.APIKey)
+			client, err := truenas.Connect(cfg.Host, cfg.APIKey, cfg.Timeout)
 			if err != nil {
 				return fmt.Errorf("failed to connect to TrueNAS: %w", err)
 			}
@@ -54,6 +56,7 @@ func NewServeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&cfg.Host, "host", envOrDefault("TRUENAS_HOST", ""), "TrueNAS host address (e.g., truenas.local)")
 	cmd.Flags().StringVar(&cfg.APIKey, "api-key", envOrDefault("TRUENAS_API_KEY", ""), "TrueNAS API key")
 	cmd.Flags().BoolVar(&cfg.ReadOnly, "read-only", envOrDefault("TRUENAS_READ_ONLY", "") != "", "Restrict to read-only tools (no create/delete/update operations)")
+	cmd.Flags().IntVar(&cfg.Timeout, "timeout", envOrDefaultInt("TRUENAS_TIMEOUT", 30), "Per-call timeout in seconds for TrueNAS API requests")
 
 	return cmd
 }
@@ -61,6 +64,15 @@ func NewServeCmd() *cobra.Command {
 func envOrDefault(key, fallback string) string {
 	if val := os.Getenv(key); val != "" {
 		return val
+	}
+	return fallback
+}
+
+func envOrDefaultInt(key string, fallback int) int {
+	if val := os.Getenv(key); val != "" {
+		if n, err := strconv.Atoi(val); err == nil {
+			return n
+		}
 	}
 	return fallback
 }
