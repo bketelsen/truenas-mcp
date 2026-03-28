@@ -27,8 +27,8 @@ main.go                  Entry point — uses Charm fang CLI framework
 ### Data Flow
 
 1. CLI parses flags/env vars and calls `truenas.Connect(host, apiKey)` to open a WebSocket
-2. `server.New(client, readOnly)` creates the MCP server and registers tools
-3. `server.Run()` starts the MCP server on stdio, blocking until disconnect
+2. `server.New(client, readOnly)` creates the MCP server (`*mcp.Server`) and registers tools
+3. `server.Run(ctx, s)` starts the MCP server on `StdioTransport`, blocking until disconnect
 4. Each tool handler calls `client.Call(method, params...)` which:
    - Sends a JSON-RPC call over WebSocket with a 30-second timeout
    - Parses the response envelope, extracting `result` or `error`
@@ -42,6 +42,16 @@ main.go                  Entry point — uses Charm fang CLI framework
 | `truenas` | Thin wrapper around `github.com/truenas/api_client_golang`. Defines the `Caller` interface and provides `Connect`, `Call`, `Close`. |
 | `server` | MCP server construction and all tool definitions. Each `tools_*.go` file covers one domain. |
 | `version` | Single `Version` constant (`0.1.0`), used by the CLI framework. |
+
+### Key Dependencies
+
+| Dependency | Version | Purpose |
+|-----------|---------|---------|
+| Go | 1.26.1 | Language version (from `go.mod`) |
+| `github.com/modelcontextprotocol/go-sdk` | v1.4.0 | MCP protocol implementation |
+| `charm.land/fang/v2` | v2.0.1 | CLI framework (Cobra wrapper) |
+| `github.com/spf13/cobra` | v1.10.2 | CLI command structure |
+| `github.com/truenas/api_client_golang` | v0.0.0-20250820 | TrueNAS WebSocket JSON-RPC client |
 
 ## Key Patterns
 
@@ -67,6 +77,8 @@ Each tool is defined inline with `s.AddTool(&mcp.Tool{...}, handlerFunc)`. The h
 
 When `--read-only` is set (or `TRUENAS_READ_ONLY` env var is non-empty), mutating tools (create, delete, start, stop, restart, dismiss) are never registered. AI clients cannot see or invoke them.
 
+**Note:** Any non-empty value of `TRUENAS_READ_ONLY` enables read-only mode, including `"false"` or `"0"`. The check is `envOrDefault("TRUENAS_READ_ONLY", "") != ""`.
+
 ### Schema Helpers
 
 `tools_system.go` defines shared helpers used across all tool files:
@@ -80,6 +92,10 @@ When `--read-only` is set (or `TRUENAS_READ_ONLY` env var is non-empty), mutatin
 The codebase uses explicit blank-identifier assignments to satisfy `errcheck` lint rules for errors that are intentionally not handled:
 - `_, _ = fmt.Fprintf(...)` for stderr status messages where write failures are not actionable
 - `_ = api.Close()` for cleanup in error paths and deferred closes where close errors cannot be meaningfully handled
+
+### JSON Number Handling
+
+TrueNAS API IDs arrive as JSON numbers, which Go's `json.Unmarshal` decodes as `float64`. Share delete handlers cast these to `int` before passing to the API: `int(a["id"].(float64))`. This is a common pattern when working with `map[string]any` from MCP argument parsing.
 
 ### TrueNAS API Mapping
 
@@ -129,7 +145,7 @@ Tests use the `Caller` interface for dependency injection — no real TrueNAS se
 
 ### Test Organization
 
-Each `tools_*.go` file has a corresponding `tools_*_test.go` that tests both read and write tools. `helpers_test.go` covers the schema/arg parsing helpers. `server_test.go` tests `New()` for correct read-only vs read-write tool registration.
+Each `tools_*.go` file has a corresponding `tools_*_test.go` that tests both read and write tools. `helpers_test.go` covers the schema/arg parsing helpers. `server_test.go` tests `New()` for correct read-only vs read-write tool registration. `cmd/serve_test.go` tests environment variable handling and command validation (e.g., missing host/API key errors).
 
 ## CI
 
