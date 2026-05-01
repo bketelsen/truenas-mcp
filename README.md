@@ -45,6 +45,8 @@ This fail-closed default is intended to make first contact with a TrueNAS system
 
 TLS certificate verification is enabled by default. If your TrueNAS appliance uses a self-signed certificate, pass `--tls-insecure` or set `TRUENAS_TLS_INSECURE=true` after you understand the tradeoff.
 
+For a step-by-step safe first connection checklist, see [First Contact with TrueNAS](docs/first-contact.md).
+
 ## MCP Configuration
 
 Add to your Claude Code MCP settings (`~/.claude/settings.json`):
