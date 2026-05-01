@@ -17,6 +17,7 @@ func New(client truenas.Caller, readOnly bool) *mcp.Server {
 	}, nil)
 
 	// Read-only tools — always registered
+	registerHealthReportTools(s, client)
 	registerSystemTools(s, client)
 	registerPoolTools(s, client)
 	registerDatasetReadTools(s, client)
@@ -24,6 +25,7 @@ func New(client truenas.Caller, readOnly bool) *mcp.Server {
 	registerShareReadTools(s, client)
 	registerAlertReadTools(s, client)
 	registerAppReadTools(s, client)
+	registerJobReadTools(s, client)
 
 	// Mutating tools — only when not in read-only mode
 	if !readOnly {

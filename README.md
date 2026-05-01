@@ -79,6 +79,7 @@ Tools marked with `*` are excluded by default and are registered only with `--en
 
 | Tool | Description |
 |------|-------------|
+| `truenas_health_report` | Aggregated system, pool, disk, and alert health report |
 | `truenas_system_info` | System hostname, version, uptime, platform |
 | `truenas_disk_list` | Physical disks with health status |
 | `truenas_network_list` | Network interfaces and IPs |
@@ -102,6 +103,8 @@ Tools marked with `*` are excluded by default and are registered only with `--en
 | `truenas_alert_dismiss` | Dismiss an alert `*` |
 | `truenas_app_list` | Installed apps with status |
 | `truenas_app_get` | App details |
+| `truenas_apps_update_report` | Apps with app or container image updates available |
 | `truenas_app_start` | Start an app `*` |
 | `truenas_app_stop` | Stop an app `*` |
 | `truenas_app_restart` | Restart an app `*` |
+| `truenas_jobs_list` | Recent TrueNAS jobs, optionally filtered by state or method |
