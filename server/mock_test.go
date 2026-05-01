@@ -51,6 +51,42 @@ func callTool(t *testing.T, caller truenas.Caller, readOnly bool, toolName strin
 	})
 }
 
+// listTools creates a server with the given caller, connects an in-memory client,
+// and returns the registered tool names.
+func listTools(t *testing.T, caller truenas.Caller, readOnly bool) []string {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	s := New(caller, readOnly)
+	ct, st := mcp.NewInMemoryTransports()
+
+	ss, err := s.Connect(ctx, st, nil)
+	if err != nil {
+		t.Fatalf("server connect: %v", err)
+	}
+	defer func() { _ = ss.Close() }()
+
+	c := mcp.NewClient(&mcp.Implementation{Name: "test-client"}, nil)
+	cs, err := c.Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatalf("client connect: %v", err)
+	}
+	defer func() { _ = cs.Close() }()
+
+	res, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+
+	names := make([]string, 0, len(res.Tools))
+	for _, tool := range res.Tools {
+		names = append(names, tool.Name)
+	}
+	return names
+}
+
 // resultText extracts the text string from the first TextContent in a CallToolResult.
 func resultText(t *testing.T, r *mcp.CallToolResult) string {
 	t.Helper()

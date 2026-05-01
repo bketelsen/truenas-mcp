@@ -19,7 +19,7 @@ make
 ## Usage
 
 ```bash
-# with flags
+# safe default: read-only tools only
 truenas-mcp serve --host truenas.local --api-key YOUR_API_KEY
 
 # with environment variables
@@ -27,18 +27,23 @@ export TRUENAS_HOST=truenas.local
 export TRUENAS_API_KEY=YOUR_API_KEY
 truenas-mcp serve
 
-# read-only mode — only query tools, no create/delete/update operations
-truenas-mcp serve --host truenas.local --api-key YOUR_API_KEY --read-only
+# opt into mutating tools only when you intentionally want writes
+truenas-mcp serve --host truenas.local --api-key YOUR_API_KEY --enable-writes
 
-# read-only mode via environment variable
-TRUENAS_READ_ONLY=1 truenas-mcp serve
+# opt into mutating tools via environment variable
+TRUENAS_ENABLE_WRITES=true truenas-mcp serve
+
+# allow self-signed certificates only when explicitly needed
+truenas-mcp serve --host truenas.local --api-key YOUR_API_KEY --tls-insecure
 ```
 
-### Read-Only Mode
+### Read-Only by Default
 
-Pass `--read-only` (or set `TRUENAS_READ_ONLY` to any non-empty value) to restrict the MCP server to read-only tools only. When enabled, tools that create, delete, or modify resources are not registered — AI clients cannot see or invoke them.
+The MCP server starts in read-only mode unless you explicitly pass `--enable-writes` or set `TRUENAS_ENABLE_WRITES=true`. In the default mode, tools that create, delete, or modify resources are not registered — AI clients cannot see or invoke them.
 
-This is useful when you want AI assistants to query your NAS without any risk of accidental changes.
+This fail-closed default is intended to make first contact with a TrueNAS system safe. Keep the server read-only until you have tested the tool responses against your NAS.
+
+TLS certificate verification is enabled by default. If your TrueNAS appliance uses a self-signed certificate, pass `--tls-insecure` or set `TRUENAS_TLS_INSECURE=true` after you understand the tradeoff.
 
 ## MCP Configuration
 
@@ -55,14 +60,14 @@ Add to your Claude Code MCP settings (`~/.claude/settings.json`):
 }
 ```
 
-For read-only mode:
+For write-enabled mode:
 
 ```json
 {
   "mcpServers": {
     "truenas": {
       "command": "/path/to/truenas-mcp",
-      "args": ["serve", "--host", "truenas.local", "--api-key", "YOUR_API_KEY", "--read-only"]
+      "args": ["serve", "--host", "truenas.local", "--api-key", "YOUR_API_KEY", "--enable-writes"]
     }
   }
 }
@@ -70,7 +75,7 @@ For read-only mode:
 
 ## Available Tools
 
-Tools marked with `*` are excluded in `--read-only` mode.
+Tools marked with `*` are excluded by default and are registered only with `--enable-writes` or `TRUENAS_ENABLE_WRITES=true`.
 
 | Tool | Description |
 |------|-------------|
