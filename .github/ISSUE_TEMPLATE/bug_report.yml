@@ -1,0 +1,100 @@
+name: Bug report
+description: Report a reproducible problem with truenas-mcp
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Do not include API keys, private hostnames, screenshots with secrets, or detailed security reports in public issues.
+  - type: input
+    id: version
+    attributes:
+      label: truenas-mcp version or commit
+      description: Paste the release version or commit SHA you are running.
+      placeholder: "commit SHA or version"
+    validations:
+      required: true
+  - type: input
+    id: truenas-version
+    attributes:
+      label: TrueNAS SCALE version
+      placeholder: "25.10.x"
+    validations:
+      required: false
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: Where are you running truenas-mcp?
+      placeholder: "Linux, macOS, Windows, container, etc."
+    validations:
+      required: false
+  - type: input
+    id: mcp-client
+    attributes:
+      label: MCP client
+      description: Which MCP client are you using?
+      placeholder: "Claude Code, Claude Desktop, OpenClaw, etc."
+    validations:
+      required: false
+  - type: textarea
+    id: config
+    attributes:
+      label: Sanitized command or MCP config
+      description: Remove API keys, private hostnames, and other secrets before pasting.
+      render: text
+    validations:
+      required: false
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Server mode
+      options:
+        - read-only default
+        - writes enabled with --enable-writes / TRUENAS_ENABLE_WRITES=true
+        - not sure
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include MCP tool names and sanitized inputs when useful.
+      placeholder: |
+        1. Start server with ...
+        2. Call tool ...
+        3. See error ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      description: Paste relevant logs after removing API keys, private hostnames, and NAS-private details.
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checks
+      options:
+        - label: I removed API keys and secrets from this report.
+          required: true
+        - label: This is not a detailed security vulnerability report. If it is, I will follow SECURITY.md instead.
+          required: true
