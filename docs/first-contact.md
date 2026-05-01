@@ -19,12 +19,24 @@ The default server mode is read-only. Keep it that way until you have inspected 
 make build
 ```
 
+Or use the guided first-contact script:
+
+```bash
+export TRUENAS_HOST=truenas.local
+read -rs TRUENAS_API_KEY
+export TRUENAS_API_KEY
+scripts/first-contact.sh
+```
+
+The script requires `make`, `go`, and `python3`. It does not contact TrueNAS unless you pass `--run-server`. Do not run it with shell tracing (`bash -x`) because tracing can expose secrets.
+
 ## Environment
 
 ```bash
 unset TRUENAS_ENABLE_WRITES
 export TRUENAS_HOST=truenas.local
-export TRUENAS_API_KEY='paste-api-key-here'
+read -rs TRUENAS_API_KEY
+export TRUENAS_API_KEY
 ```
 
 If your appliance uses a self-signed certificate and you accept that risk for first contact:
@@ -40,6 +52,12 @@ export TRUENAS_TLS_INSECURE=true
 ```
 
 Do not add `--enable-writes`.
+
+To let the guided script start the read-only server after checks:
+
+```bash
+scripts/first-contact.sh --run-server
+```
 
 ## Claude MCP Configuration
 

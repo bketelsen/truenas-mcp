@@ -47,6 +47,15 @@ TLS certificate verification is enabled by default. If your TrueNAS appliance us
 
 For a step-by-step safe first connection checklist, see [First Contact with TrueNAS](docs/first-contact.md).
 
+You can also use the guided runbook script:
+
+```bash
+export TRUENAS_HOST=truenas.local
+read -rs TRUENAS_API_KEY
+export TRUENAS_API_KEY
+scripts/first-contact.sh
+```
+
 ## MCP Configuration
 
 Add to your Claude Code MCP settings (`~/.claude/settings.json`):
