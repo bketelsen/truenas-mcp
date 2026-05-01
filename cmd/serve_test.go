@@ -32,7 +32,8 @@ func TestEnvOrDefault_Empty(t *testing.T) {
 func TestServeCmd_MissingHost(t *testing.T) {
 	t.Setenv("TRUENAS_HOST", "")
 	t.Setenv("TRUENAS_API_KEY", "")
-	t.Setenv("TRUENAS_READ_ONLY", "")
+	t.Setenv("TRUENAS_ENABLE_WRITES", "")
+	t.Setenv("TRUENAS_TLS_INSECURE", "")
 
 	cmd := NewServeCmd()
 	cmd.SetArgs([]string{})
@@ -48,7 +49,8 @@ func TestServeCmd_MissingHost(t *testing.T) {
 func TestServeCmd_MissingAPIKey(t *testing.T) {
 	t.Setenv("TRUENAS_HOST", "")
 	t.Setenv("TRUENAS_API_KEY", "")
-	t.Setenv("TRUENAS_READ_ONLY", "")
+	t.Setenv("TRUENAS_ENABLE_WRITES", "")
+	t.Setenv("TRUENAS_TLS_INSECURE", "")
 
 	cmd := NewServeCmd()
 	cmd.SetArgs([]string{"--host", "fake.local"})
@@ -61,19 +63,62 @@ func TestServeCmd_MissingAPIKey(t *testing.T) {
 	}
 }
 
-func TestServeCmd_ReadOnlyEnvQuirk(t *testing.T) {
-	// Any non-empty value of TRUENAS_READ_ONLY enables read-only mode,
-	// including "false" or "0".
-	t.Setenv("TRUENAS_READ_ONLY", "false")
+func TestServeCmd_WritesDisabledByDefault(t *testing.T) {
+	t.Setenv("TRUENAS_ENABLE_WRITES", "")
 	t.Setenv("TRUENAS_HOST", "")
 	t.Setenv("TRUENAS_API_KEY", "")
 
 	cmd := NewServeCmd()
-	readOnly, err := cmd.Flags().GetBool("read-only")
+	enableWrites, err := cmd.Flags().GetBool("enable-writes")
 	if err != nil {
-		t.Fatalf("getting read-only flag: %v", err)
+		t.Fatalf("getting enable-writes flag: %v", err)
 	}
-	if !readOnly {
-		t.Error("TRUENAS_READ_ONLY='false' should still enable read-only mode (any non-empty value)")
+	if enableWrites {
+		t.Error("writes should be disabled by default")
+	}
+}
+
+func TestServeCmd_EnableWritesEnv(t *testing.T) {
+	t.Setenv("TRUENAS_ENABLE_WRITES", "true")
+	t.Setenv("TRUENAS_HOST", "")
+	t.Setenv("TRUENAS_API_KEY", "")
+
+	cmd := NewServeCmd()
+	enableWrites, err := cmd.Flags().GetBool("enable-writes")
+	if err != nil {
+		t.Fatalf("getting enable-writes flag: %v", err)
+	}
+	if !enableWrites {
+		t.Error("TRUENAS_ENABLE_WRITES=true should enable writes")
+	}
+}
+
+func TestServeCmd_EnableWritesFalseEnv(t *testing.T) {
+	t.Setenv("TRUENAS_ENABLE_WRITES", "false")
+	t.Setenv("TRUENAS_HOST", "")
+	t.Setenv("TRUENAS_API_KEY", "")
+
+	cmd := NewServeCmd()
+	enableWrites, err := cmd.Flags().GetBool("enable-writes")
+	if err != nil {
+		t.Fatalf("getting enable-writes flag: %v", err)
+	}
+	if enableWrites {
+		t.Error("TRUENAS_ENABLE_WRITES=false should keep writes disabled")
+	}
+}
+
+func TestServeCmd_TLSInsecureEnv(t *testing.T) {
+	t.Setenv("TRUENAS_TLS_INSECURE", "1")
+	t.Setenv("TRUENAS_HOST", "")
+	t.Setenv("TRUENAS_API_KEY", "")
+
+	cmd := NewServeCmd()
+	tlsInsecure, err := cmd.Flags().GetBool("tls-insecure")
+	if err != nil {
+		t.Fatalf("getting tls-insecure flag: %v", err)
+	}
+	if !tlsInsecure {
+		t.Error("TRUENAS_TLS_INSECURE=1 should skip TLS verification")
 	}
 }

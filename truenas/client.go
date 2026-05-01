@@ -19,11 +19,13 @@ type Client struct {
 }
 
 // Connect establishes a WebSocket connection to TrueNAS and authenticates with an API key.
-func Connect(host, apiKey string) (*Client, error) {
+func Connect(host, apiKey string, tlsInsecure bool) (*Client, error) {
 	url := fmt.Sprintf("wss://%s/api/current", host)
 
-	// verifySSL=false to support self-signed certs common on NAS devices
-	api, err := truenas_api.NewClient(url, false)
+	// TrueNAS appliances often use self-signed certificates, but production clients
+	// should fail closed unless the operator explicitly opts out of verification.
+	verifySSL := !tlsInsecure
+	api, err := truenas_api.NewClient(url, verifySSL)
 	if err != nil {
 		return nil, fmt.Errorf("connecting to TrueNAS at %s: %w", host, err)
 	}

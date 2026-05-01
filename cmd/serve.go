@@ -10,9 +10,10 @@ import (
 )
 
 type serveConfig struct {
-	Host     string
-	APIKey   string
-	ReadOnly bool
+	Host         string
+	APIKey       string
+	EnableWrites bool
+	TLSInsecure  bool
 }
 
 func NewServeCmd() *cobra.Command {
@@ -32,7 +33,7 @@ func NewServeCmd() *cobra.Command {
 
 			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Connecting to TrueNAS at %s...\n", cfg.Host)
 
-			client, err := truenas.Connect(cfg.Host, cfg.APIKey)
+			client, err := truenas.Connect(cfg.Host, cfg.APIKey, cfg.TLSInsecure)
 			if err != nil {
 				return fmt.Errorf("failed to connect to TrueNAS: %w", err)
 			}
@@ -40,12 +41,12 @@ func NewServeCmd() *cobra.Command {
 
 			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Connected and authenticated.\n")
 
-			mcpServer := server.New(client, cfg.ReadOnly)
+			mcpServer := server.New(client, !cfg.EnableWrites)
 
-			if cfg.ReadOnly {
-				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Starting MCP server on stdio (read-only mode)...\n")
+			if cfg.EnableWrites {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Starting MCP server on stdio (writes enabled)...\n")
 			} else {
-				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Starting MCP server on stdio...\n")
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Starting MCP server on stdio (read-only mode)...\n")
 			}
 			return server.Run(cmd.Context(), mcpServer)
 		},
@@ -53,7 +54,8 @@ func NewServeCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&cfg.Host, "host", envOrDefault("TRUENAS_HOST", ""), "TrueNAS host address (e.g., truenas.local)")
 	cmd.Flags().StringVar(&cfg.APIKey, "api-key", envOrDefault("TRUENAS_API_KEY", ""), "TrueNAS API key")
-	cmd.Flags().BoolVar(&cfg.ReadOnly, "read-only", envOrDefault("TRUENAS_READ_ONLY", "") != "", "Restrict to read-only tools (no create/delete/update operations)")
+	cmd.Flags().BoolVar(&cfg.EnableWrites, "enable-writes", envBool("TRUENAS_ENABLE_WRITES", false), "Register tools that create, delete, or modify TrueNAS resources")
+	cmd.Flags().BoolVar(&cfg.TLSInsecure, "tls-insecure", envBool("TRUENAS_TLS_INSECURE", false), "Skip TLS certificate verification when connecting to TrueNAS")
 
 	return cmd
 }
@@ -63,4 +65,19 @@ func envOrDefault(key, fallback string) string {
 		return val
 	}
 	return fallback
+}
+
+func envBool(key string, fallback bool) bool {
+	val := os.Getenv(key)
+	if val == "" {
+		return fallback
+	}
+	switch val {
+	case "1", "t", "T", "true", "TRUE", "True", "y", "Y", "yes", "YES", "Yes", "on", "ON", "On":
+		return true
+	case "0", "f", "F", "false", "FALSE", "False", "n", "N", "no", "NO", "No", "off", "OFF", "Off":
+		return false
+	default:
+		return fallback
+	}
 }

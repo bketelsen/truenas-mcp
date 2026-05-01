@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Complete catalog of MCP tools exposed by truenas-mcp. Tools marked with **[write]** are excluded in `--read-only` mode.
+Complete catalog of MCP tools exposed by truenas-mcp. Tools marked with **[write]** are excluded by default and are registered only with `--enable-writes` or `TRUENAS_ENABLE_WRITES=true`.
 
 ## System Tools (`tools_system.go`)
 
