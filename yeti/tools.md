@@ -4,6 +4,11 @@ Complete catalog of MCP tools exposed by truenas-mcp. Tools marked with **[write
 
 ## System Tools (`tools_system.go`)
 
+### `truenas_health_report`
+Return an aggregated read-only health report from system info, system state, pools, disks, and alerts.
+- Parameters: none
+- APIs: `system.info`, `system.state`, `pool.query`, `disk.query`, `alert.list`
+
 ### `truenas_system_info`
 Get system hostname, version, uptime, and platform.
 - Parameters: none
@@ -155,6 +160,11 @@ Get detailed info for a specific app.
   - `name` (string, required) — app name
 - API: `app.query` with filter `[["name", "=", name]]`
 
+### `truenas_apps_update_report`
+Report installed apps with TrueNAS app or container image updates available.
+- Parameters: none
+- API: `app.query`
+
 ### `truenas_app_start` **[write]**
 Start a stopped app.
 - Parameters:
@@ -172,3 +182,13 @@ Restart an app.
 - Parameters:
   - `name` (string, required) — app name
 - API: `app.restart`
+
+## Job Tools (`tools_reports.go`)
+
+### `truenas_jobs_list`
+List recent TrueNAS jobs, optionally filtered by state or method.
+- Parameters:
+  - `state` (string, optional) — job state (`WAITING`, `RUNNING`, `SUCCESS`, `FAILED`, or `ABORTED`)
+  - `method` (string, optional) — job method name
+  - `limit` (number, optional) — maximum jobs to return, clamped to 200
+- API: `core.get_jobs`
