@@ -183,6 +183,17 @@ Restart an app.
   - `name` (string, required) — app name
 - API: `app.restart`
 
+### `truenas_app_update` **[write]**
+Upgrade an app to the latest available version and return the job ID.
+- Parameters:
+  - `name` (string, required) — app name
+- API: `app.query` with filter `[["name", "=", name]]`, then `app.upgrade`
+
+### `truenas_app_update_all` **[write]**
+Upgrade all apps with updates available and return the job IDs.
+- Parameters: none
+- API: `app.query` with filter `[["upgrade_available", "=", true]]`, then `app.upgrade` for each app
+
 ## Job Tools (`tools_reports.go`)
 
 ### `truenas_jobs_list`
