@@ -118,4 +118,6 @@ Tools marked with `*` are excluded by default and are registered only with `--en
 | `truenas_app_start` | Start an app `*` |
 | `truenas_app_stop` | Stop an app `*` |
 | `truenas_app_restart` | Restart an app `*` |
+| `truenas_app_update` | Upgrade an app to the latest available version `*` |
+| `truenas_app_update_all` | Upgrade all apps with updates available `*` |
 | `truenas_jobs_list` | Recent TrueNAS jobs, optionally filtered by state or method |

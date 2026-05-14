@@ -145,4 +145,105 @@ func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 		}
 		return jsonResult(result)
 	})
+
+	s.AddTool(&mcp.Tool{
+		Name:        "truenas_app_update",
+		Description: "Upgrade a named app to its latest available version and return the TrueNAS job ID.",
+		InputSchema: schema(map[string]any{
+			"name": stringProp("app name to upgrade"),
+		}, "name"),
+	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		a := args(req)
+		name, ok := a["name"].(string)
+		if !ok || name == "" {
+			return nil, fmt.Errorf("required parameter 'name' missing")
+		}
+
+		result, err := client.Call("app.query", [][]any{{"name", "=", name}})
+		if err != nil {
+			return nil, fmt.Errorf("app.query: %w", err)
+		}
+
+		var apps []map[string]any
+		if err := json.Unmarshal(result, &apps); err != nil {
+			return nil, fmt.Errorf("parsing app.query: %w", err)
+		}
+		if len(apps) == 0 {
+			return nil, fmt.Errorf("app %q not found", name)
+		}
+		upgradeAvailable, _ := apps[0]["upgrade_available"].(bool)
+		if !upgradeAvailable {
+			return nil, fmt.Errorf("app %q has no update available", name)
+		}
+
+		jobID, err := upgradeApp(client, name)
+		if err != nil {
+			return nil, err
+		}
+		return jsonValueResult(map[string]any{
+			"name":   name,
+			"job_id": jobID,
+		})
+	})
+
+	s.AddTool(&mcp.Tool{
+		Name:        "truenas_app_update_all",
+		Description: "Upgrade all apps with updates available and return the TrueNAS job IDs.",
+		InputSchema: noArgs(),
+	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		result, err := client.Call("app.query", [][]any{{"upgrade_available", "=", true}})
+		if err != nil {
+			return nil, fmt.Errorf("app.query: %w", err)
+		}
+
+		var apps []map[string]any
+		if err := json.Unmarshal(result, &apps); err != nil {
+			return nil, fmt.Errorf("parsing app.query: %w", err)
+		}
+
+		jobs := []map[string]any{}
+		for _, app := range apps {
+			upgradeAvailable, _ := app["upgrade_available"].(bool)
+			if !upgradeAvailable {
+				continue
+			}
+			name, ok := app["name"].(string)
+			if !ok || name == "" {
+				return nil, fmt.Errorf("app.query returned app without a name")
+			}
+			jobID, err := upgradeApp(client, name)
+			if err != nil {
+				return nil, err
+			}
+			jobs = append(jobs, map[string]any{
+				"name":   name,
+				"job_id": jobID,
+			})
+		}
+
+		return jsonValueResult(map[string]any{
+			"summary": map[string]any{
+				"updates_available": len(apps),
+				"jobs_started":      len(jobs),
+			},
+			"jobs": jobs,
+		})
+	})
+}
+
+func upgradeApp(client truenas.Caller, name string) (any, error) {
+	result, err := client.Call("app.upgrade", name, map[string]any{
+		"app_version":        "latest",
+		"values":             map[string]any{},
+		"snapshot_hostpaths": false,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("app.upgrade: %w", err)
+	}
+
+	var jobID any
+	if err := json.Unmarshal(result, &jobID); err != nil {
+		return nil, fmt.Errorf("parsing app.upgrade: %w", err)
+	}
+	return jobID, nil
 }

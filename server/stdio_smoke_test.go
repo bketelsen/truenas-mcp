@@ -69,6 +69,8 @@ func TestStdioSmoke_ReadOnlyToolList(t *testing.T) {
 		"truenas_app_start",
 		"truenas_app_stop",
 		"truenas_app_restart",
+		"truenas_app_update",
+		"truenas_app_update_all",
 	}
 	for _, name := range writeTools {
 		if tools[name] {

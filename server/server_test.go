@@ -62,6 +62,8 @@ func TestNew_ReadOnly_ToolListContainsNoWriteTools(t *testing.T) {
 		"truenas_app_start":       true,
 		"truenas_app_stop":        true,
 		"truenas_app_restart":     true,
+		"truenas_app_update":      true,
+		"truenas_app_update_all":  true,
 	}
 
 	for _, name := range listTools(t, mock, true) {
