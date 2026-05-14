@@ -202,6 +202,7 @@ func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 		}
 
 		jobs := []map[string]any{}
+		failures := []map[string]any{}
 		for _, app := range apps {
 			upgradeAvailable, _ := app["upgrade_available"].(bool)
 			if !upgradeAvailable {
@@ -209,11 +210,18 @@ func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 			}
 			name, ok := app["name"].(string)
 			if !ok || name == "" {
-				return nil, fmt.Errorf("app.query returned app without a name")
+				failures = append(failures, map[string]any{
+					"error": "app.query returned app without a name",
+				})
+				continue
 			}
 			jobID, err := upgradeApp(client, name)
 			if err != nil {
-				return nil, err
+				failures = append(failures, map[string]any{
+					"name":  name,
+					"error": err.Error(),
+				})
+				continue
 			}
 			jobs = append(jobs, map[string]any{
 				"name":   name,
@@ -225,8 +233,10 @@ func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 			"summary": map[string]any{
 				"updates_available": len(apps),
 				"jobs_started":      len(jobs),
+				"failures":          len(failures),
 			},
-			"jobs": jobs,
+			"jobs":     jobs,
+			"failures": failures,
 		})
 	})
 }

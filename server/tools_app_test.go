@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -322,5 +323,83 @@ func TestAppUpdateAll_SuccessReturnsJobIDs(t *testing.T) {
 	}
 	if fmt.Sprint(calls) != "[app.query app.upgrade app.upgrade]" {
 		t.Errorf("calls = %v, want [app.query app.upgrade app.upgrade]", calls)
+	}
+}
+
+func TestAppUpdateAll_PartialSuccessReturnsStartedJobIDsAndFailures(t *testing.T) {
+	calls := []string{}
+	mock := &mockCaller{
+		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+			calls = append(calls, method)
+			switch method {
+			case "app.query":
+				return json.RawMessage(`[
+					{"name":"plex","upgrade_available":true},
+					{"name":"broken","upgrade_available":true},
+					{"name":"syncthing","upgrade_available":true}
+				]`), nil
+			case "app.upgrade":
+				if len(params) != 2 {
+					t.Fatalf("app.upgrade params = %v, want [name options]", params)
+				}
+				switch params[0] {
+				case "plex":
+					return json.RawMessage(`201`), nil
+				case "broken":
+					return nil, fmt.Errorf("upgrade unavailable")
+				case "syncthing":
+					return json.RawMessage(`202`), nil
+				default:
+					t.Fatalf("unexpected app.upgrade app %v", params[0])
+				}
+			default:
+				t.Fatalf("unexpected method %q", method)
+			}
+			return nil, nil
+		},
+	}
+
+	result, err := callTool(t, mock, false, "truenas_app_update_all", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(resultText(t, result)), &payload); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	jobs := payload["jobs"].([]any)
+	if len(jobs) != 2 {
+		t.Fatalf("jobs len = %d, want 2", len(jobs))
+	}
+	if jobs[0].(map[string]any)["name"] != "plex" || jobs[0].(map[string]any)["job_id"] != float64(201) {
+		t.Errorf("first job = %v, want plex job 201", jobs[0])
+	}
+	if jobs[1].(map[string]any)["name"] != "syncthing" || jobs[1].(map[string]any)["job_id"] != float64(202) {
+		t.Errorf("second job = %v, want syncthing job 202", jobs[1])
+	}
+
+	summary := payload["summary"].(map[string]any)
+	if summary["jobs_started"] != float64(2) {
+		t.Errorf("jobs_started = %v, want 2", summary["jobs_started"])
+	}
+	if summary["failures"] != float64(1) {
+		t.Errorf("failures = %v, want 1", summary["failures"])
+	}
+
+	failures := payload["failures"].([]any)
+	if len(failures) != 1 {
+		t.Fatalf("failures len = %d, want 1", len(failures))
+	}
+	failure := failures[0].(map[string]any)
+	if failure["name"] != "broken" {
+		t.Errorf("failure name = %v, want broken", failure["name"])
+	}
+	errorText, ok := failure["error"].(string)
+	if !ok || !strings.Contains(errorText, "app.upgrade: upgrade unavailable") {
+		t.Errorf("failure error = %v, want app.upgrade context", failure["error"])
+	}
+	if fmt.Sprint(calls) != "[app.query app.upgrade app.upgrade app.upgrade]" {
+		t.Errorf("calls = %v, want [app.query app.upgrade app.upgrade app.upgrade]", calls)
 	}
 }
