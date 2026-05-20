@@ -28,10 +28,9 @@ func registerPoolTools(s *mcp.Server, client truenas.Caller) {
 			"name": stringProp("name of the pool to inspect"),
 		}, "name"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		a := args(req)
-		name, ok := a["name"].(string)
-		if !ok || name == "" {
-			return nil, fmt.Errorf("required parameter 'name' missing")
+		name, err := requireString(req, "name")
+		if err != nil {
+			return nil, err
 		}
 		result, err := client.Call("pool.query", [][]any{{"name", "=", name}})
 		if err != nil {

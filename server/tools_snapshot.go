@@ -17,10 +17,9 @@ func registerSnapshotReadTools(s *mcp.Server, client truenas.Caller) {
 			"dataset": stringProp("dataset path to list snapshots for"),
 		}, "dataset"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		a := args(req)
-		dataset, ok := a["dataset"].(string)
-		if !ok || dataset == "" {
-			return nil, fmt.Errorf("required parameter 'dataset' missing")
+		dataset, err := requireString(req, "dataset")
+		if err != nil {
+			return nil, err
 		}
 		result, err := client.Call("zfs.snapshot.query", [][]any{{"dataset", "=", dataset}})
 		if err != nil {
@@ -36,10 +35,9 @@ func registerSnapshotReadTools(s *mcp.Server, client truenas.Caller) {
 			"name": stringProp("full snapshot name (e.g. tank/data@snap1)"),
 		}, "name"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		a := args(req)
-		name, ok := a["name"].(string)
-		if !ok || name == "" {
-			return nil, fmt.Errorf("required parameter 'name' missing")
+		name, err := requireString(req, "name")
+		if err != nil {
+			return nil, err
 		}
 		result, err := client.Call("zfs.snapshot.query", [][]any{{"id", "=", name}})
 		if err != nil {
@@ -59,12 +57,11 @@ func registerSnapshotWriteTools(s *mcp.Server, client truenas.Caller) {
 			"name":    stringProp("optional snapshot name (auto-generates if omitted)"),
 		}, "dataset"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		a := args(req)
-		dataset, ok := a["dataset"].(string)
-		if !ok || dataset == "" {
-			return nil, fmt.Errorf("required parameter 'dataset' missing")
+		dataset, err := requireString(req, "dataset")
+		if err != nil {
+			return nil, err
 		}
-		snapName, _ := a["name"].(string)
+		snapName := optionalString(req, "name")
 		if snapName == "" {
 			snapName = "auto-" + time.Now().UTC().Format("20060102-150405")
 		}
@@ -86,10 +83,9 @@ func registerSnapshotWriteTools(s *mcp.Server, client truenas.Caller) {
 			"name": stringProp("full snapshot name to delete (e.g. tank/data@snap1)"),
 		}, "name"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		a := args(req)
-		name, ok := a["name"].(string)
-		if !ok || name == "" {
-			return nil, fmt.Errorf("required parameter 'name' missing")
+		name, err := requireString(req, "name")
+		if err != nil {
+			return nil, err
 		}
 		result, err := client.Call("zfs.snapshot.delete", name)
 		if err != nil {

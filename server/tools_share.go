@@ -46,20 +46,19 @@ func registerShareWriteTools(s *mcp.Server, client truenas.Caller) {
 			"guest_ok": boolProp("allow guest access (default false)"),
 		}, "name", "path"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		a := args(req)
-		name, ok := a["name"].(string)
-		if !ok || name == "" {
-			return nil, fmt.Errorf("required parameter 'name' missing")
+		name, err := requireString(req, "name")
+		if err != nil {
+			return nil, err
 		}
-		path, ok := a["path"].(string)
-		if !ok || path == "" {
-			return nil, fmt.Errorf("required parameter 'path' missing")
+		path, err := requireString(req, "path")
+		if err != nil {
+			return nil, err
 		}
 		params := map[string]any{"name": name, "path": path}
-		if comment, ok := a["comment"].(string); ok && comment != "" {
+		if comment := optionalString(req, "comment"); comment != "" {
 			params["comment"] = comment
 		}
-		if guestOK, ok := a["guest_ok"].(bool); ok && guestOK {
+		if optionalBool(req, "guest_ok") {
 			params["guestok"] = true
 		}
 		result, err := client.Call("sharing.smb.create", params)
@@ -76,10 +75,9 @@ func registerShareWriteTools(s *mcp.Server, client truenas.Caller) {
 			"id": numberProp("share ID to delete"),
 		}, "id"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		a := args(req)
-		id, ok := a["id"].(float64)
-		if !ok {
-			return nil, fmt.Errorf("required parameter 'id' missing")
+		id, err := requireFloat64(req, "id")
+		if err != nil {
+			return nil, err
 		}
 		result, err := client.Call("sharing.smb.delete", int(id))
 		if err != nil {
@@ -97,16 +95,15 @@ func registerShareWriteTools(s *mcp.Server, client truenas.Caller) {
 			"hosts":    arrayProp("allowed hosts"),
 		}, "path"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		a := args(req)
-		path, ok := a["path"].(string)
-		if !ok || path == "" {
-			return nil, fmt.Errorf("required parameter 'path' missing")
+		path, err := requireString(req, "path")
+		if err != nil {
+			return nil, err
 		}
 		params := map[string]any{"path": path}
-		if networks, ok := a["networks"].([]any); ok && len(networks) > 0 {
+		if networks := optionalSlice(req, "networks"); len(networks) > 0 {
 			params["networks"] = networks
 		}
-		if hosts, ok := a["hosts"].([]any); ok && len(hosts) > 0 {
+		if hosts := optionalSlice(req, "hosts"); len(hosts) > 0 {
 			params["hosts"] = hosts
 		}
 		result, err := client.Call("sharing.nfs.create", params)
@@ -123,10 +120,9 @@ func registerShareWriteTools(s *mcp.Server, client truenas.Caller) {
 			"id": numberProp("export ID to delete"),
 		}, "id"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		a := args(req)
-		id, ok := a["id"].(float64)
-		if !ok {
-			return nil, fmt.Errorf("required parameter 'id' missing")
+		id, err := requireFloat64(req, "id")
+		if err != nil {
+			return nil, err
 		}
 		result, err := client.Call("sharing.nfs.delete", int(id))
 		if err != nil {

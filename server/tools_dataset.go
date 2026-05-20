@@ -16,9 +16,8 @@ func registerDatasetReadTools(s *mcp.Server, client truenas.Caller) {
 			"pool": stringProp("optional pool name to filter datasets"),
 		}),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		a := args(req)
 		params := []any{}
-		if pool, ok := a["pool"].(string); ok && pool != "" {
+		if pool := optionalString(req, "pool"); pool != "" {
 			params = append(params, [][]any{{"pool", "=", pool}})
 		}
 		result, err := client.Call("pool.dataset.query", params...)
@@ -35,10 +34,9 @@ func registerDatasetReadTools(s *mcp.Server, client truenas.Caller) {
 			"path": stringProp("full dataset path (e.g. tank/data)"),
 		}, "path"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		a := args(req)
-		path, ok := a["path"].(string)
-		if !ok || path == "" {
-			return nil, fmt.Errorf("required parameter 'path' missing")
+		path, err := requireString(req, "path")
+		if err != nil {
+			return nil, err
 		}
 		result, err := client.Call("pool.dataset.query", [][]any{{"id", "=", path}})
 		if err != nil {
@@ -59,16 +57,15 @@ func registerDatasetWriteTools(s *mcp.Server, client truenas.Caller) {
 			"compression": stringProp("compression algorithm (e.g. lz4, zstd, off)"),
 		}, "name"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		a := args(req)
-		name, ok := a["name"].(string)
-		if !ok || name == "" {
-			return nil, fmt.Errorf("required parameter 'name' missing")
+		name, err := requireString(req, "name")
+		if err != nil {
+			return nil, err
 		}
 		params := map[string]any{"name": name}
-		if comments, ok := a["comments"].(string); ok && comments != "" {
+		if comments := optionalString(req, "comments"); comments != "" {
 			params["comments"] = comments
 		}
-		if compression, ok := a["compression"].(string); ok && compression != "" {
+		if compression := optionalString(req, "compression"); compression != "" {
 			params["compression"] = compression
 		}
 		result, err := client.Call("pool.dataset.create", params)
@@ -85,10 +82,9 @@ func registerDatasetWriteTools(s *mcp.Server, client truenas.Caller) {
 			"path": stringProp("full dataset path to delete (e.g. tank/olddata)"),
 		}, "path"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		a := args(req)
-		path, ok := a["path"].(string)
-		if !ok || path == "" {
-			return nil, fmt.Errorf("required parameter 'path' missing")
+		path, err := requireString(req, "path")
+		if err != nil {
+			return nil, err
 		}
 		result, err := client.Call("pool.dataset.delete", path)
 		if err != nil {
