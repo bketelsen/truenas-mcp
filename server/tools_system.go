@@ -41,14 +41,6 @@ func arrayProp(desc string) map[string]any {
 	return map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": desc}
 }
 
-func args(req *mcp.CallToolRequest) map[string]any {
-	var m map[string]any
-	if err := json.Unmarshal(req.Params.Arguments, &m); err != nil || m == nil {
-		return map[string]any{}
-	}
-	return m
-}
-
 func jsonResult(raw json.RawMessage) (*mcp.CallToolResult, error) {
 	pretty, err := json.MarshalIndent(json.RawMessage(raw), "", "  ")
 	if err != nil {

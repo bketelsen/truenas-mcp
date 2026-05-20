@@ -93,48 +93,6 @@ func TestArrayProp(t *testing.T) {
 	}
 }
 
-func TestArgs_Valid(t *testing.T) {
-	req := &mcp.CallToolRequest{}
-	req.Params = &mcp.CallToolParamsRaw{
-		Arguments: json.RawMessage(`{"name":"tank","size":42}`),
-	}
-
-	a := args(req)
-	if a["name"] != "tank" {
-		t.Errorf("name = %v, want tank", a["name"])
-	}
-	if a["size"] != 42.0 {
-		t.Errorf("size = %v, want 42", a["size"])
-	}
-}
-
-func TestArgs_NilArguments(t *testing.T) {
-	req := &mcp.CallToolRequest{}
-	req.Params = &mcp.CallToolParamsRaw{}
-	a := args(req)
-	if a == nil {
-		t.Fatal("args returned nil, want empty map")
-	}
-	if len(a) != 0 {
-		t.Errorf("args returned %d entries, want 0", len(a))
-	}
-}
-
-func TestArgs_MalformedJSON(t *testing.T) {
-	req := &mcp.CallToolRequest{}
-	req.Params = &mcp.CallToolParamsRaw{
-		Arguments: json.RawMessage(`{invalid`),
-	}
-
-	a := args(req)
-	if a == nil {
-		t.Fatal("args returned nil, want empty map")
-	}
-	if len(a) != 0 {
-		t.Errorf("args returned %d entries, want 0", len(a))
-	}
-}
-
 func TestJsonResult(t *testing.T) {
 	raw := json.RawMessage(`{"hostname":"nas","version":"24.04"}`)
 	result, err := jsonResult(raw)
