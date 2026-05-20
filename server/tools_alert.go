@@ -16,9 +16,8 @@ func registerAlertReadTools(s *mcp.Server, client truenas.Caller) {
 			"level": stringProp("filter by alert level: INFO, WARNING, CRITICAL, or empty for all"),
 		}),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		a := args(req)
 		params := []any{}
-		if level, ok := a["level"].(string); ok && level != "" {
+		if level := optionalString(req, "level"); level != "" {
 			params = append(params, [][]any{{"level", "=", level}})
 		}
 		result, err := client.Call("alert.list", params...)
@@ -38,10 +37,9 @@ func registerAlertWriteTools(s *mcp.Server, client truenas.Caller) {
 			"id": stringProp("alert ID to dismiss"),
 		}, "id"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		a := args(req)
-		id, ok := a["id"].(string)
-		if !ok || id == "" {
-			return nil, fmt.Errorf("required parameter 'id' missing")
+		id, err := requireString(req, "id")
+		if err != nil {
+			return nil, err
 		}
 		result, err := client.Call("alert.dismiss", id)
 		if err != nil {

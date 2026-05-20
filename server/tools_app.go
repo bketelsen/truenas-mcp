@@ -29,10 +29,9 @@ func registerAppReadTools(s *mcp.Server, client truenas.Caller) {
 			"name": stringProp("app name to inspect"),
 		}, "name"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		a := args(req)
-		name, ok := a["name"].(string)
-		if !ok || name == "" {
-			return nil, fmt.Errorf("required parameter 'name' missing")
+		name, err := requireString(req, "name")
+		if err != nil {
+			return nil, err
 		}
 		result, err := client.Call("app.query", [][]any{{"name", "=", name}})
 		if err != nil {
@@ -96,10 +95,9 @@ func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 			"name": stringProp("app name to start"),
 		}, "name"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		a := args(req)
-		name, ok := a["name"].(string)
-		if !ok || name == "" {
-			return nil, fmt.Errorf("required parameter 'name' missing")
+		name, err := requireString(req, "name")
+		if err != nil {
+			return nil, err
 		}
 		result, err := client.Call("app.start", name)
 		if err != nil {
@@ -115,10 +113,9 @@ func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 			"name": stringProp("app name to stop"),
 		}, "name"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		a := args(req)
-		name, ok := a["name"].(string)
-		if !ok || name == "" {
-			return nil, fmt.Errorf("required parameter 'name' missing")
+		name, err := requireString(req, "name")
+		if err != nil {
+			return nil, err
 		}
 		result, err := client.Call("app.stop", name)
 		if err != nil {
@@ -134,10 +131,9 @@ func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 			"name": stringProp("app name to restart"),
 		}, "name"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		a := args(req)
-		name, ok := a["name"].(string)
-		if !ok || name == "" {
-			return nil, fmt.Errorf("required parameter 'name' missing")
+		name, err := requireString(req, "name")
+		if err != nil {
+			return nil, err
 		}
 		result, err := client.Call("app.restart", name)
 		if err != nil {
@@ -153,10 +149,9 @@ func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 			"name": stringProp("app name to upgrade"),
 		}, "name"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		a := args(req)
-		name, ok := a["name"].(string)
-		if !ok || name == "" {
-			return nil, fmt.Errorf("required parameter 'name' missing")
+		name, err := requireString(req, "name")
+		if err != nil {
+			return nil, err
 		}
 
 		result, err := client.Call("app.query", [][]any{{"name", "=", name}})

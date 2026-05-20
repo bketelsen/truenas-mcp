@@ -127,16 +127,15 @@ func registerJobReadTools(s *mcp.Server, client truenas.Caller) {
 			"limit":  numberProp("maximum jobs to return, default 50"),
 		}),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		a := args(req)
 		filters := [][]any{}
-		if state, ok := a["state"].(string); ok && state != "" {
+		if state := optionalString(req, "state"); state != "" {
 			filters = append(filters, []any{"state", "=", strings.ToUpper(state)})
 		}
-		if method, ok := a["method"].(string); ok && method != "" {
+		if method := optionalString(req, "method"); method != "" {
 			filters = append(filters, []any{"method", "=", method})
 		}
 		limit := 50
-		if rawLimit, ok := a["limit"].(float64); ok && rawLimit > 0 {
+		if rawLimit, ok := optionalFloat64(req, "limit"); ok {
 			limit = int(rawLimit)
 		}
 		if limit > 200 {
