@@ -15,18 +15,20 @@ main.go                  Entry point — uses Charm fang CLI framework
 │   └── client.go        WebSocket JSON-RPC client wrapper
 └── server/
     ├── server.go         MCP server setup and tool registration
-    ├── tools_system.go   System/disk/network query tools + shared helpers
+    ├── tools_system.go   System/disk/network query tools + shared schema helpers
     ├── tools_pool.go     ZFS pool tools
     ├── tools_dataset.go  Dataset list/get/create/delete tools
     ├── tools_snapshot.go Snapshot list/get/create/delete tools
     ├── tools_share.go    SMB and NFS share tools
     ├── tools_alert.go    Alert list/dismiss tools
-    └── tools_app.go      App list/get/start/stop/restart tools
+    ├── tools_reports.go  Aggregated health report and job-list tools
+    ├── tools_app.go      App list/get/start/stop/restart/update tools + update report
+    └── params.go         Typed MCP parameter accessors
 ```
 
 ### Data Flow
 
-1. CLI parses flags/env vars and calls `truenas.Connect(host, apiKey)` to open a WebSocket
+1. CLI parses flags/env vars and calls `truenas.Connect(host, apiKey, tlsInsecure)` to open a WebSocket
 2. `server.New(client, readOnly)` creates the MCP server (`*mcp.Server`) and registers tools
 3. `server.Run(ctx, s)` starts the MCP server on `StdioTransport`, blocking until disconnect
 4. Each tool handler calls `client.Call(method, params...)` which:
@@ -71,21 +73,29 @@ Tools are split into read and write registration functions per domain:
 - `register<Domain>Tools` or `register<Domain>ReadTools` — always registered
 - `register<Domain>WriteTools` — only registered when `readOnly` is false
 
-Each tool is defined inline with `s.AddTool(&mcp.Tool{...}, handlerFunc)`. The handler extracts arguments from `req.Params.Arguments`, calls the TrueNAS API, and returns pretty-printed JSON.
+Report-style read tools are registered alongside the domain tools: `tools_reports.go` provides the aggregated health report plus job listing, and `tools_app.go` includes the read-only app update report as well as the app update write tools.
+
+Each tool is defined inline with `s.AddTool(&mcp.Tool{...}, handlerFunc)`. The handler uses typed accessors from `server/params.go` to read MCP arguments, calls the TrueNAS API, and returns pretty-printed JSON.
 
 ### Read-Only Mode
 
-When `--read-only` is set (or `TRUENAS_READ_ONLY` env var is non-empty), mutating tools (create, delete, start, stop, restart, dismiss) are never registered. AI clients cannot see or invoke them.
+Read-only mode is the default. Unless writes are explicitly enabled with `--enable-writes` or `TRUENAS_ENABLE_WRITES=true`, mutating tools (create, delete, start, stop, restart, dismiss, update) are never registered. AI clients cannot see or invoke them.
 
-**Note:** Any non-empty value of `TRUENAS_READ_ONLY` enables read-only mode, including `"false"` or `"0"`. The check is `envOrDefault("TRUENAS_READ_ONLY", "") != ""`.
+`TRUENAS_ENABLE_WRITES` is parsed with `envBool`, so common true values (`1`, `true`, `yes`, `on`) opt in and common false values (`0`, `false`, `no`, `off`) keep the default read-only behavior.
 
-### Schema Helpers
+### Schema and Parameter Helpers
 
-`tools_system.go` defines shared helpers used across all tool files:
+`tools_system.go` defines shared schema/result helpers used across tool files:
 - `schema()`, `noArgs()` — build MCP input schema objects
 - `stringProp()`, `numberProp()`, `boolProp()`, `arrayProp()` — property builders
-- `args()` — extracts argument map from request
 - `jsonResult()` — wraps raw JSON as pretty-printed MCP text content
+
+`server/params.go` defines typed accessors for MCP arguments:
+- `requireString()`, `optionalString()`
+- `requireFloat64()`, `optionalFloat64()`
+- `optionalBool()`, `optionalSlice()`
+
+Use these helpers instead of manually unpacking `req.Params.Arguments` in each tool.
 
 ### Lint Compliance: Intentionally Ignored Errors
 
@@ -95,7 +105,7 @@ The codebase uses explicit blank-identifier assignments to satisfy `errcheck` li
 
 ### JSON Number Handling
 
-TrueNAS API IDs arrive as JSON numbers, which Go's `json.Unmarshal` decodes as `float64`. Share delete handlers cast these to `int` before passing to the API: `int(a["id"].(float64))`. This is a common pattern when working with `map[string]any` from MCP argument parsing.
+MCP numeric arguments arrive through JSON unmarshalling as `float64`. Handlers should use `requireFloat64()` or `optionalFloat64()` from `server/params.go`, then cast to the API's expected type when needed (for example, converting an ID to `int` before passing it to TrueNAS).
 
 ### TrueNAS API Mapping
 
@@ -121,15 +131,17 @@ Tool handlers wrap API errors with context (e.g., `fmt.Errorf("pool.query: %w", 
 | Env | `TRUENAS_HOST` | Same as `--host` |
 | Flag | `--api-key` | TrueNAS API key |
 | Env | `TRUENAS_API_KEY` | Same as `--api-key` |
-| Flag | `--read-only` | Restrict to read-only tools |
-| Env | `TRUENAS_READ_ONLY` | Any non-empty value enables read-only mode |
+| Flag | `--enable-writes` | Opt in to registering tools that create, delete, or modify TrueNAS resources |
+| Env | `TRUENAS_ENABLE_WRITES` | Same as `--enable-writes` |
+| Flag | `--tls-insecure` | Skip TLS certificate verification |
+| Env | `TRUENAS_TLS_INSECURE` | Same as `--tls-insecure` |
 
-Flags take precedence over defaults; env vars are used as default values for flags (via `envOrDefault` in `cmd/serve.go`).
+Flags take precedence over defaults; env vars are used as default values for flags (via `envOrDefault` and `envBool` in `cmd/serve.go`). Writes are disabled by default.
 
 ### Connection Details
 
 - WebSocket URL: `wss://<host>/api/current`
-- SSL verification is disabled (self-signed certs common on NAS devices)
+- TLS certificate verification is enabled by default; `--tls-insecure` / `TRUENAS_TLS_INSECURE` explicitly opts out (useful for self-signed NAS certificates)
 - Authentication via API key (not username/password)
 - API call timeout: 30 seconds
 
@@ -145,7 +157,7 @@ Tests use the `Caller` interface for dependency injection — no real TrueNAS se
 
 ### Test Organization
 
-Each `tools_*.go` file has a corresponding `tools_*_test.go` that tests both read and write tools. `helpers_test.go` covers the schema/arg parsing helpers. `server_test.go` tests `New()` for correct read-only vs read-write tool registration. `cmd/serve_test.go` tests environment variable handling and command validation (e.g., missing host/API key errors).
+Each `tools_*.go` file has corresponding `tools_*_test.go` coverage for read and write tools, plus report/update coverage such as `tools_reports_test.go` and `tools_app_update_report_test.go`. `helpers_test.go` covers the schema/result helpers, and `params_test.go` covers the typed parameter accessors. `server_test.go` tests `New()` for correct read-only vs read-write tool registration. `cmd/serve_test.go` tests environment variable handling and command validation (e.g., missing host/API key errors).
 
 ## CI
 
