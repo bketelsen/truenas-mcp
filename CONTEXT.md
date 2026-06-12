@@ -69,7 +69,7 @@ _Avoid_: task, operation, process
 
 > **Dev:** I want to update all apps that have pending updates.
 >
-> **Domain expert:** Call `truenas_app_update_all`. It returns a list of Job IDs — one per App being updated. Then poll `truenas_jobs_list` filtering by those IDs until each Job reaches SUCCESS or FAILED.
+> **Domain expert:** Call `truenas_app_update_all`. It returns a list of Job IDs — one per App being updated. Then poll recent jobs with `truenas_jobs_list` and match those IDs client-side until each Job reaches SUCCESS or FAILED.
 >
 > **Dev:** What if I only want to update one App?
 >
