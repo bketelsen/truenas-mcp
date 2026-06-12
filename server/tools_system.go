@@ -42,15 +42,7 @@ func arrayProp(desc string) map[string]any {
 }
 
 func jsonResult(raw json.RawMessage) (*mcp.CallToolResult, error) {
-	pretty, err := json.MarshalIndent(json.RawMessage(raw), "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("formatting result: %w", err)
-	}
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: string(pretty)},
-		},
-	}, nil
+	return jsonValueResult(json.RawMessage(raw))
 }
 
 func registerSystemTools(s *mcp.Server, client truenas.Caller) {
