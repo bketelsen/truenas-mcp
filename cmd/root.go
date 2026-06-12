@@ -5,6 +5,7 @@ import (
 	"truenas-mcp/version"
 )
 
+// NewRootCmd returns the root cobra command for truenas-mcp.
 func NewRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "truenas-mcp",
