@@ -16,6 +16,7 @@ type serveConfig struct {
 	TLSInsecure  bool
 }
 
+// NewServeCmd returns the cobra command that runs the MCP server over stdio.
 func NewServeCmd() *cobra.Command {
 	cfg := &serveConfig{}
 
