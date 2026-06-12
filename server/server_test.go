@@ -49,21 +49,9 @@ func TestNew_ReadOnly_ToolListContainsNoWriteTools(t *testing.T) {
 		},
 	}
 
-	writeTools := map[string]bool{
-		"truenas_dataset_create":  true,
-		"truenas_dataset_delete":  true,
-		"truenas_snapshot_create": true,
-		"truenas_snapshot_delete": true,
-		"truenas_smb_create":      true,
-		"truenas_smb_delete":      true,
-		"truenas_nfs_create":      true,
-		"truenas_nfs_delete":      true,
-		"truenas_alert_dismiss":   true,
-		"truenas_app_start":       true,
-		"truenas_app_stop":        true,
-		"truenas_app_restart":     true,
-		"truenas_app_update":      true,
-		"truenas_app_update_all":  true,
+	writeTools := make(map[string]bool, len(writeToolNames))
+	for _, name := range writeToolNames {
+		writeTools[name] = true
 	}
 
 	for _, name := range listTools(t, mock, true) {

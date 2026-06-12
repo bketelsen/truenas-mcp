@@ -56,23 +56,7 @@ func TestStdioSmoke_ReadOnlyToolList(t *testing.T) {
 		tools[tool.Name] = true
 	}
 
-	writeTools := []string{
-		"truenas_dataset_create",
-		"truenas_dataset_delete",
-		"truenas_snapshot_create",
-		"truenas_snapshot_delete",
-		"truenas_smb_create",
-		"truenas_smb_delete",
-		"truenas_nfs_create",
-		"truenas_nfs_delete",
-		"truenas_alert_dismiss",
-		"truenas_app_start",
-		"truenas_app_stop",
-		"truenas_app_restart",
-		"truenas_app_update",
-		"truenas_app_update_all",
-	}
-	for _, name := range writeTools {
+	for _, name := range writeToolNames {
 		if tools[name] {
 			t.Fatalf("read-only stdio server registered write tool %q", name)
 		}
