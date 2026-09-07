@@ -140,6 +140,9 @@ Flags take precedence over defaults; env vars are used as default values for fla
 
 ### Connection Details
 
+- `Client.Call` serializes access and probes with `core.ping` before each operation. A failed probe closes the stale connection and dials/authenticates again using the original connection settings.
+- A transport failure during the operation invalidates the connection but does not replay the operation. This prevents duplicate writes when a response is lost. Explicit `Close` is terminal.
+- `truenas/client_test.go` covers stale connections, failed reconnects, no write replay, terminal close, and concurrent callers; run with the race detector.
 - WebSocket URL: `wss://<host>/api/current`
 - TLS certificate verification is enabled by default; `--tls-insecure` / `TRUENAS_TLS_INSECURE` explicitly opts out (useful for self-signed NAS certificates)
 - Authentication via API key (not username/password)

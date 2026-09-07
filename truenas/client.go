@@ -3,6 +3,7 @@ package truenas
 import (
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/truenas/api_client_golang/truenas_api"
 )
@@ -15,11 +16,29 @@ type Caller interface {
 
 // Client wraps the TrueNAS WebSocket JSON-RPC client.
 type Client struct {
-	api *truenas_api.Client
+	mu     sync.Mutex
+	api    connection
+	dial   func() (connection, error)
+	closed bool
+}
+
+type connection interface {
+	Call(string, int64, interface{}) (json.RawMessage, error)
+	Ping() (string, error)
+	Close() error
 }
 
 // Connect establishes a WebSocket connection to TrueNAS and authenticates with an API key.
 func Connect(host, apiKey string, tlsInsecure bool) (*Client, error) {
+	dial := func() (connection, error) { return connectAPI(host, apiKey, tlsInsecure) }
+	api, err := dial()
+	if err != nil {
+		return nil, err
+	}
+	return &Client{api: api, dial: dial}, nil
+}
+
+func connectAPI(host, apiKey string, tlsInsecure bool) (connection, error) {
 	url := fmt.Sprintf("wss://%s/api/current", host)
 
 	// TrueNAS appliances often use self-signed certificates, but production clients
@@ -35,25 +54,53 @@ func Connect(host, apiKey string, tlsInsecure bool) (*Client, error) {
 		return nil, fmt.Errorf("authenticating with TrueNAS: %w", err)
 	}
 
-	return &Client{api: api}, nil
+	return api, nil
 }
 
 // Close cleanly shuts down the WebSocket connection.
 func (c *Client) Close() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.closed = true
 	if c.api != nil {
 		_ = c.api.Close()
+		c.api = nil
 	}
 }
 
 // Call invokes a TrueNAS JSON-RPC method and returns the result as raw JSON.
 // It handles the envelope parsing and error extraction.
 func (c *Client) Call(method string, params ...interface{}) (json.RawMessage, error) {
+	// The upstream client does not serialize WebSocket writes. Also keep
+	// connection replacement and shutdown exclusive with outstanding calls.
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return nil, fmt.Errorf("TrueNAS client is closed")
+	}
+	// Probe before sending the requested operation. Reconnect only here:
+	// retrying an operation after a lost response could duplicate a write.
+	if c.api != nil {
+		if _, err := c.api.Ping(); err != nil {
+			_ = c.api.Close()
+			c.api = nil
+		}
+	}
+	if c.api == nil {
+		api, err := c.dial()
+		if err != nil {
+			return nil, fmt.Errorf("reconnecting to TrueNAS: %w", err)
+		}
+		c.api = api
+	}
 	if len(params) == 0 {
 		params = []interface{}{}
 	}
 
 	raw, err := c.api.Call(method, 30, params)
 	if err != nil {
+		_ = c.api.Close()
+		c.api = nil
 		return nil, fmt.Errorf("calling %s: %w", method, err)
 	}
 

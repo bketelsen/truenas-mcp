@@ -45,6 +45,8 @@ This fail-closed default is intended to make first contact with a TrueNAS system
 
 TLS certificate verification is enabled by default. If your TrueNAS appliance uses a self-signed certificate, pass `--tls-insecure` or set `TRUENAS_TLS_INSECURE=true` after you understand the tradeoff.
 
+The client checks the appliance connection before each operation and reconnects and authenticates again if that check fails. Operations are serialized. If an operation itself fails at the transport layer, it is reported without automatic replay, since a write may already have taken effect; the next request opens a fresh connection.
+
 For a step-by-step safe first connection checklist, see [First Contact with TrueNAS](docs/first-contact.md).
 
 You can also use the guided runbook script:
