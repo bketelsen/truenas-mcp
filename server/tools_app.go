@@ -41,6 +41,34 @@ func registerAppReadTools(s *mcp.Server, client truenas.Caller) {
 	})
 
 	s.AddTool(&mcp.Tool{
+		Name: "truenas_app_config",
+		Description: "Get the installed configuration values for a specific app by name: " +
+			"environment, storage, network, resource, and user/group settings as entered at install or edit time. " +
+			"This is the raw config object and may contain plaintext secrets such as database passwords or API keys; " +
+			"request it only when the configuration itself is needed. truenas_app_get shows the running workload without it.",
+		InputSchema: schema(map[string]any{
+			"name": stringProp("app name whose configuration to inspect"),
+		}, "name"),
+	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		name, err := requireString(req, "name")
+		if err != nil {
+			return nil, err
+		}
+		result, err := client.Call("app.config", name)
+		if err != nil {
+			return nil, fmt.Errorf("app.config: %w", err)
+		}
+		var config any
+		if err := json.Unmarshal(result, &config); err != nil {
+			return nil, fmt.Errorf("parsing app.config: %w", err)
+		}
+		return jsonValueResult(map[string]any{
+			"name":   name,
+			"config": config,
+		})
+	})
+
+	s.AddTool(&mcp.Tool{
 		Name:        "truenas_apps_update_report",
 		Description: "Report installed apps with TrueNAS app or container image updates available.",
 		InputSchema: noArgs(),

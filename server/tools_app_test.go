@@ -71,6 +71,66 @@ func TestAppGet_MissingName(t *testing.T) {
 	}
 }
 
+func TestAppConfig_Success(t *testing.T) {
+	mock := &mockCaller{
+		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+			if method != "app.config" {
+				t.Errorf("method = %q, want app.config", method)
+			}
+			if len(params) != 1 || params[0] != "plex" {
+				t.Errorf("params = %v, want [plex]", params)
+			}
+			return json.RawMessage(`{"network":{"web_port":32400},"plex":{"claim_token":"claim-secret"}}`), nil
+		},
+	}
+	result, err := callTool(t, mock, true, "truenas_app_config", map[string]any{"name": "plex"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(resultText(t, result)), &got); err != nil {
+		t.Fatalf("result is not JSON: %v", err)
+	}
+	if got["name"] != "plex" {
+		t.Errorf("name = %v, want plex", got["name"])
+	}
+	config, ok := got["config"].(map[string]any)
+	if !ok {
+		t.Fatalf("config is %T, want object", got["config"])
+	}
+	if config["plex"].(map[string]any)["claim_token"] != "claim-secret" {
+		t.Errorf("config not passed through verbatim: %v", config)
+	}
+}
+
+func TestAppConfig_MissingName(t *testing.T) {
+	mock := &mockCaller{
+		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+			t.Fatal("Call should not be invoked")
+			return nil, nil
+		},
+	}
+	result, err := callTool(t, mock, true, "truenas_app_config", nil)
+	if err == nil && (result == nil || !result.IsError) {
+		t.Error("expected error for missing name")
+	}
+}
+
+func TestAppConfig_APIError(t *testing.T) {
+	mock := &mockCaller{
+		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+			return nil, fmt.Errorf("[ENOENT] app not found")
+		},
+	}
+	result, err := callTool(t, mock, true, "truenas_app_config", map[string]any{"name": "nope"})
+	if err == nil && (result == nil || !result.IsError) {
+		t.Fatal("expected error from app.config")
+	}
+	if result != nil && result.IsError && !strings.Contains(resultText(t, result), "app.config") {
+		t.Errorf("error should name the API call: %s", resultText(t, result))
+	}
+}
+
 func TestAppStart_Success(t *testing.T) {
 	mock := &mockCaller{
 		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
