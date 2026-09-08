@@ -160,6 +160,13 @@ Get detailed info for a specific app.
   - `name` (string, required) — app name
 - API: `app.query` with filter `[["name", "=", name]]`
 
+### `truenas_app_config`
+Get the configuration values an app was installed or last edited with (environment, storage, network, resources, run-as IDs). Separate from `truenas_app_get` on purpose: `app.query` without `retrieve_config` omits this object, and it may contain plaintext secrets (database passwords, claim tokens, API keys). Read-only, but callers should request it only when the configuration itself is the question.
+- Parameters:
+  - `name` (string, required) — app name
+- API: `app.config` with the app name
+- Returns: `{ "name": <name>, "config": <raw config object> }`
+
 ### `truenas_apps_update_report`
 Report installed apps with TrueNAS app or container image updates available.
 - Parameters: none

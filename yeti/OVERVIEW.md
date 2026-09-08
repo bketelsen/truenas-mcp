@@ -22,7 +22,7 @@ main.go                  Entry point — uses Charm fang CLI framework
     ├── tools_share.go    SMB and NFS share tools
     ├── tools_alert.go    Alert list/dismiss tools
     ├── tools_reports.go  Aggregated health report and job-list tools
-    ├── tools_app.go      App list/get/start/stop/restart/update tools + update report
+    ├── tools_app.go      App list/get/config/start/stop/restart/update tools + update report
     └── params.go         Typed MCP parameter accessors
 ```
 

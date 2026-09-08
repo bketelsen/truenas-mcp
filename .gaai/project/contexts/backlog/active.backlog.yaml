@@ -166,3 +166,15 @@ items:
     artefact: contexts/artefacts/stories/E07S01.story.md
     dependencies: [E01S03]
     notes: "Discovery 2026-03-12 — safety feature for AI-assisted NAS management"
+
+  - id: E06S03
+    epic: E06
+    title: "Expose installed app configuration as a separate read tool"
+    priority: low
+    status: done
+    started_at: "2026-09-08T21:00:00Z"
+    completed_at: "2026-09-08T21:30:00Z"
+    artefact: contexts/artefacts/stories/E06S03.story.md
+    dependencies: [E06S01]
+    notes: "Requested directly by maintainer 2026-09-08 — truenas_app_config via app.config; kept out of truenas_app_get because the config object carries plaintext secrets"
+
