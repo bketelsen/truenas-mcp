@@ -107,4 +107,4 @@ Representative tools available by default include:
 - `truenas_apps_update_report`
 - `truenas_jobs_list`
 
-Tools with names like `create`, `delete`, `start`, `stop`, `restart`, or `dismiss` should not appear unless you intentionally started the server with `--enable-writes` or `TRUENAS_ENABLE_WRITES=true`.
+Tools with names like `create`, `delete`, `start`, `stop`, `restart`, `configure`, or `dismiss` should not appear unless you intentionally started the server with `--enable-writes` or `TRUENAS_ENABLE_WRITES=true`.

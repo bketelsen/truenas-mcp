@@ -178,3 +178,14 @@ items:
     dependencies: [E06S01]
     notes: "Requested directly by maintainer 2026-09-08 — truenas_app_config via app.config; kept out of truenas_app_get because the config object carries plaintext secrets"
 
+  - id: E06S04
+    epic: E06
+    title: "Change installed app configuration values"
+    priority: low
+    status: done
+    started_at: "2026-09-08T22:00:00Z"
+    completed_at: "2026-09-08T23:00:00Z"
+    artefact: contexts/artefacts/stories/E06S04.story.md
+    dependencies: [E06S03]
+    notes: "Requested directly by maintainer 2026-09-08 — truenas_app_configure; client-side deep merge because app.update is a shallow top-level dict update (verified in TS-25.10.4 middleware source and live)"
+

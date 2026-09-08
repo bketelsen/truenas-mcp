@@ -203,6 +203,18 @@ Upgrade all apps with updates available and return the job IDs.
 
 ## Job Tools (`tools_reports.go`)
 
+### `truenas_app_configure` **[write]** (`tools_app_configure.go`)
+Change configuration values of an installed catalog app and return the job ID.
+- Parameters:
+  - `name` (string, required) — app name
+  - `values` (object, required) — PARTIAL nested config in the shape `truenas_app_config` returns
+  - `dry_run` (boolean, optional) — return the merged config and changed paths without applying
+- API: `app.query` (existence + `custom_app` check), `app.config` (current values), then `app.update(name, {"values": <merged>})`
+- Returns: `{ "name", "job_id", "changed_paths" }`; with `dry_run`: `{ "name", "dry_run": true, "changed_paths", "values" }`
+- Why the client-side merge: TrueNAS `app.update` performs a SHALLOW top-level `dict.update` of the stored config with the caller's `values` (middleware `plugins/apps/crud.py`, `update_internal`), then re-populates schema defaults for anything now missing. A partial nested payload therefore replaces an entire section and resets its siblings — proven live on 25.10.4: after setting `resources.limits.memory=512`, a raw `app.update` carrying only `{"resources": {"limits": {"cpus": 2}}}` reset memory to its 4096 default. The tool deep-merges into the current config (objects recurse; lists, scalars, and null replace whole) and sends the complete result, so only the named leaves change.
+- Guards: top-level sections must already exist (typo protection); `ix_*` sections are refused as input and stripped from the payload and change report because the middleware regenerates them (`RESERVED_NAMES`); an identical payload is refused as a no-op; custom compose apps are refused (their config is `custom_compose_config`, a different contract).
+- Side effect: unless the app is STOPPED, the middleware runs `compose up --force-recreate`, so applying a change restarts the app's containers.
+
 ### `truenas_jobs_list`
 List recent TrueNAS jobs, optionally filtered by state or method.
 - Parameters:

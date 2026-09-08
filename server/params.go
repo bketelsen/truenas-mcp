@@ -56,3 +56,12 @@ func optionalSlice(req *mcp.CallToolRequest, field string) []any {
 	v, _ := m[field].([]any)
 	return v
 }
+
+func requireObject(req *mcp.CallToolRequest, field string) (map[string]any, error) {
+	m := parseArgs(req)
+	v, ok := m[field].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("required parameter %q missing or not an object", field)
+	}
+	return v, nil
+}

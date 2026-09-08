@@ -37,6 +37,10 @@ func boolProp(desc string) map[string]any {
 	return map[string]any{"type": "boolean", "description": desc}
 }
 
+func objectProp(desc string) map[string]any {
+	return map[string]any{"type": "object", "description": desc}
+}
+
 func arrayProp(desc string) map[string]any {
 	return map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": desc}
 }
