@@ -78,3 +78,7 @@ _Avoid_: task, operation, process
 > **Dev:** Can I check which Apps have updates before running it?
 >
 > **Domain expert:** Yes — `truenas_apps_update_report` is a Report that lists Apps with available updates. Read-only, no side effects, no Job IDs returned.
+
+> **User:** Can I change how an App is configured, like its port or memory limit?
+>
+> **Domain expert:** Yes — `truenas_app_configure` takes the App name and a partial `values` object in the same shape `truenas_app_config` returns, deep-merges it into the current configuration, and applies it. It returns a Job ID; poll `truenas_jobs_list` until SUCCESS. Applying a change redeploys the App's containers, so expect a brief interruption. Use `dry_run: true` first to see the exact merged configuration and which paths would change. Custom (compose) Apps are not supported by this tool.

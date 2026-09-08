@@ -32,6 +32,7 @@ var writeToolNames = []string{
 	"truenas_app_restart",
 	"truenas_app_update",
 	"truenas_app_update_all",
+	"truenas_app_configure",
 }
 
 func (m *mockCaller) Call(method string, params ...interface{}) (json.RawMessage, error) {
