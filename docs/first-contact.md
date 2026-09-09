@@ -48,7 +48,7 @@ export TRUENAS_TLS_INSECURE=true
 ## Run Read-Only
 
 ```bash
-./truenas-mcp serve --host "$TRUENAS_HOST" --api-key "$TRUENAS_API_KEY"
+./build/truenas-mcp serve --host "$TRUENAS_HOST" --api-key "$TRUENAS_API_KEY"
 ```
 
 Do not add `--enable-writes`.

@@ -1,3 +1,9 @@
 .envrc
 /truenas-mcp
+/build/
+/dist/
+/completions/
+/manpages/
+coverage.out
+coverage.html
 /.worktrees/

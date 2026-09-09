@@ -16,6 +16,7 @@ func main() {
 		context.Background(),
 		root,
 		fang.WithVersion(version.Version),
+		fang.WithCommit(version.Commit),
 		fang.WithNotifySignal(os.Interrupt),
 	); err != nil {
 		os.Exit(1)

@@ -12,10 +12,17 @@ Thanks for helping improve `truenas-mcp`. This project exposes TrueNAS SCALE man
 
 Requirements:
 
-- Go 1.26+
-- `golangci-lint` for local linting
+- Go 1.26+ (the version in `go.mod`)
+- [mise](https://mise.jdx.dev) to install the pinned `golangci-lint` from `mise.toml`
+- [svu](https://github.com/caarlos0/svu) and [GoReleaser Pro](https://goreleaser.com/pro) only if you cut releases
 
-Build:
+Install the pinned tools:
+
+```bash
+mise install
+```
+
+Build (output goes to `build/truenas-mcp`):
 
 ```bash
 make build
@@ -30,10 +37,12 @@ make test
 Run the recommended local gates before a PR:
 
 ```bash
-make all   # formats, vets, and builds
-make test
-make lint
+make verify   # tidy diff, vet, gofmt, pinned golangci-lint, tests
 ```
+
+`make ci` runs the same gate plus the race detector and cross-builds. `make help` lists every target.
+
+`make lint` refuses to run unless the installed `golangci-lint` matches the pin in `mise.toml`, so local results match CI. Bump the pin in `mise.toml` in its own commit and run `mise install` to refresh `mise.lock`.
 
 For first contact with a real TrueNAS system, use the read-only guide:
 
@@ -53,6 +62,24 @@ A good PR includes:
 - safety notes for anything that touches TrueNAS writes, authentication, TLS, or exposed metadata
 
 Write-capable tools must remain opt-in behind `--enable-writes` / `TRUENAS_ENABLE_WRITES=true` and should fail closed by default.
+
+## Commit Messages
+
+Use [Conventional Commits](https://www.conventionalcommits.org) (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`; add a scope such as `feat(app):` when it helps). The release changelog is grouped by these prefixes, and `svu` derives the next version from them: `feat` bumps minor, `fix` bumps patch, and a `!` or `BREAKING CHANGE:` footer bumps major.
+
+## Releasing
+
+Releases are tagged from a clean `main` checkout with:
+
+```bash
+make bump
+```
+
+This builds, tests, formats, and lints, refuses to continue if the working tree is dirty, then tags the version `svu next` computes and pushes the tag. The push triggers the `goreleaser` workflow, which builds the binaries and packages, publishes the GitHub release with a generated changelog, and attaches build provenance attestations.
+
+Every successful CI run on `main` also republishes the `dev` pre-release from that commit via the `snapshot` workflow.
+
+To try the release build locally without publishing, run `make snapshot` (needs `goreleaser-pro` and `GORELEASER_KEY`); the output lands in `dist/`.
 
 ## Project Style
 

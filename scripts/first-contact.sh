@@ -72,7 +72,7 @@ echo "writes: disabled (TRUENAS_ENABLE_WRITES is unset)"
 echo "$tls_note"
 echo "api key: present, not printed"
 
-declare -a cmd=("$repo_root/truenas-mcp" serve --host "$TRUENAS_HOST" --api-key '***')
+declare -a cmd=("$repo_root/build/truenas-mcp" serve --host "$TRUENAS_HOST" --api-key '***')
 if ((${#tls_args[@]})); then
   cmd+=("${tls_args[@]}")
 fi
@@ -110,7 +110,7 @@ PY
 if [[ "$mode" == "run" ]]; then
   echo
   echo "==> Starting read-only MCP server over stdio"
-  exec "$repo_root/truenas-mcp" serve --host "$TRUENAS_HOST" --api-key "$TRUENAS_API_KEY" "${tls_args[@]}"
+  exec "$repo_root/build/truenas-mcp" serve --host "$TRUENAS_HOST" --api-key "$TRUENAS_API_KEY" "${tls_args[@]}"
 fi
 
 echo
