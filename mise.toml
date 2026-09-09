@@ -1,0 +1,9 @@
+# Tool pins for this repository. Go comes from go.mod — never pin it here.
+# Every tool the gates invoke is listed; mise.lock carries the checksums.
+# `mise install` provisions the same versions locally and in CI.
+[settings]
+idiomatic_version_file_enable_tools = ["go"]
+lockfile = true
+
+[tools]
+golangci-lint = "2.13.1"

@@ -14,7 +14,7 @@
 
 Recommended commands run locally:
 
-- [ ] `make all`
+- [ ] `make verify`
 - [ ] `make test`
 - [ ] `make lint`
 - [ ] Other: 

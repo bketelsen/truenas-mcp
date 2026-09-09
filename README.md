@@ -10,11 +10,35 @@ Connects to TrueNAS SCALE (Goldeye+) via the WebSocket JSON-RPC API and exposes 
 - TrueNAS SCALE Goldeye (25.10) or later
 - A TrueNAS API key (create in TrueNAS UI → Settings → API Keys)
 
+## Install
+
+Prebuilt binaries for Linux, macOS, and Windows are attached to every
+[GitHub release](https://github.com/bketelsen/truenas-mcp/releases), along with
+`.deb`, `.rpm`, and `.apk` packages that also install shell completions and a
+man page. A `dev` pre-release tracks the latest `main` commit.
+
+Every release asset is signed with GitHub build provenance. Verify a download with:
+
+```bash
+gh attestation verify truenas-mcp_*_linux_amd64.tar.gz --repo bketelsen/truenas-mcp
+```
+
+Or install from source (the module path is `truenas-mcp`, so `go install <url>@latest` does not apply):
+
+```bash
+git clone https://github.com/bketelsen/truenas-mcp.git
+cd truenas-mcp
+make install   # -> $GOPATH/bin/truenas-mcp
+```
+
 ## Build
 
 ```bash
-make
+make            # fmt + vet + build -> build/truenas-mcp
+make help       # list all targets
 ```
+
+`make build` stamps the binary with the git tag, commit, and build time; `truenas-mcp --version` prints them.
 
 ## Usage
 

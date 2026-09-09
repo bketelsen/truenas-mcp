@@ -44,7 +44,7 @@ main.go                  Entry point — uses Charm fang CLI framework
 | `cmd` | CLI wiring via Cobra + Charm fang. Handles flag/env parsing. |
 | `truenas` | Thin wrapper around `github.com/truenas/api_client_golang`. Defines the `Caller` interface and provides `Connect`, `Call`, `Close`. |
 | `server` | MCP server construction and all tool definitions. Each `tools_*.go` file covers one domain. |
-| `version` | Single `Version` constant (`0.1.0`), used by the CLI framework. |
+| `version` | Build metadata vars (`Version`, `Commit`, `Date`, `BuiltBy`) overwritten at link time via `-X`; defaults identify a plain `go build` as `dev`. Wired into fang via `WithVersion`/`WithCommit` in `main.go`. |
 
 ### Key Dependencies
 
@@ -165,16 +165,27 @@ Each `tools_*.go` file has corresponding `tools_*_test.go` coverage for read and
 
 ## CI
 
-GitHub Actions workflow (`.github/workflows/ci.yml`) runs on push to `main` and on pull requests. Four parallel jobs:
+GitHub Actions workflow `.github/workflows/ci.yml` (named `CI`) runs on push to `main`, on pull requests, and on `merge_group`. Top-level `permissions: {}`; each job grants only `contents: read`. All actions are pinned to commit SHAs. Jobs:
 
 | Job | What it does |
 |-----|-------------|
-| `lint` | `golangci-lint` via `golangci-lint-action@v8` |
-| `fmt-check` | `gofmt -s -d .` — fails if unformatted code |
-| `test` | `make test` (includes `-race -count=1`) |
-| `build` | `make build` — verifies compilation |
+| `lint` | Installs the `golangci-lint` pinned in `mise.toml`/`mise.lock` via `jdx/mise-action`, runs `make lint-version-check`, then `golangci-lint run` |
+| `verify` | `go mod tidy -diff`, `go vet`, `gofmt -s -l` on tracked Go files |
+| `test` | `make test` (`-race -count=1`) |
+| `build` | `make build` matrix: linux/amd64, linux/arm64, darwin/arm64, windows/amd64 |
+| `release-config` | `goreleaser check` with the Pro distribution; fails on trusted runs if `GORELEASER_KEY` is missing, warns on fork PRs |
 
-Go version is read from `go.mod` via `go-version-file`, keeping CI in sync automatically.
+Go version is read from `go.mod` via `go-version-file`. The only other tool pin is `golangci-lint` in `mise.toml`; the Makefile reads that pin so `make lint` and CI cannot drift.
+
+## Release Pipeline
+
+Modeled on `frostyard/updex`. Three pieces:
+
+- **`Makefile`** — `make bump` runs build/test/fmt/lint, requires a clean tree, tags `$(svu next)` (semver derived from Conventional Commit messages since the last tag) and pushes the tag. `make snapshot` builds into `dist/` without publishing; `make release-check` validates the config. Both need `goreleaser-pro` on PATH.
+- **`.goreleaser.yaml`** — GoReleaser Pro (`pro: true`). Builds `CGO_ENABLED=0 -trimpath` binaries for linux/darwin/windows × amd64/arm64 with `-X truenas-mcp/version.*` ldflags. `before` hooks run `go mod tidy`, `scripts/completions.sh` (bash/zsh/fish via fang's `completion` command) and `scripts/manpages.sh` (fang's `man` command, gzipped). Produces tar.gz (zip on Windows) archives, `checksums.txt`, and deb/rpm/apk packages that install the binary, completions, and man page. Changelog is grouped by conventional-commit prefix. `nightly` publishes a single rolling `dev` pre-release (`{{ incmajor .Version }}-dev`).
+- **Workflows** — `release.yml` (`goreleaser`) runs on any tag push: GoReleaser Pro release, then `actions/attest-build-provenance` signs `checksums.txt` and every archive/package. `snapshot.yml` runs on `workflow_run` after a successful `CI` on `main` and does `goreleaser release --nightly --clean`; a `concurrency` group cancels stale nightlies. Both need the `GORELEASER_KEY` repository secret.
+
+Generated directories `build/`, `dist/`, `completions/`, `manpages/` are gitignored. `scripts/first-contact.sh` executes `build/truenas-mcp`.
 
 ## MCP Tools Reference
 
@@ -183,10 +194,14 @@ See [tools.md](tools.md) for the complete tool catalog with parameters.
 ## Build & Run
 
 ```bash
-make              # fmt + vet + build
+mise install      # pinned golangci-lint
+make              # fmt + vet + build -> build/truenas-mcp
 make run          # build and run `serve`
 make test         # run tests with race detector
-make lint         # golangci-lint
+make lint         # pinned golangci-lint (refuses a mismatched version)
+make verify       # static checks + tests (credential-free gate)
+make ci           # verify-static + race tests + cross-builds
+make help         # list all targets
 ```
 
-Binary name: `truenas-mcp`. Version: `0.1.0`.
+Binary name: `truenas-mcp`, built into `build/`. Version comes from `git describe --tags` at build time (`dev` for plain `go build`); there is no version constant to bump. Tags are created by `make bump`.

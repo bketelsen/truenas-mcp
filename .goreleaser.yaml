@@ -1,0 +1,138 @@
+# GoReleaser Pro configuration for truenas-mcp.
+# Docs: https://goreleaser.com
+#
+# Validate with `make release-check`, dry-run with `make snapshot`.
+# Tag releases are cut by `make bump` (svu) and built by
+# .github/workflows/release.yml; nightlies by .github/workflows/snapshot.yml.
+
+# yaml-language-server: $schema=https://goreleaser.com/static/schema-pro.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
+
+version: 2
+pro: true
+
+project_name: truenas-mcp
+
+metadata:
+  description: truenas-mcp - MCP server exposing TrueNAS SCALE management to AI assistants
+  homepage: "https://github.com/bketelsen/truenas-mcp"
+  maintainers:
+    - "Brian Ketelsen <bketelsen@gmail.com>"
+
+git:
+  # Allow non-semver tags for snapshot builds
+  ignore_tags:
+    - continuous
+    - dev
+
+snapshot:
+  # Use a static version template that doesn't require parsing existing tags
+  version_template: "{{ .ShortCommit }}-snapshot"
+
+gomod:
+  proxy: false
+
+before:
+  hooks:
+    - go mod tidy
+    - ./scripts/completions.sh
+    - ./scripts/manpages.sh
+
+builds:
+  - id: "truenas-mcp"
+    binary: truenas-mcp
+    main: .
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X truenas-mcp/version.Version={{ .Version }} -X truenas-mcp/version.Commit={{ .Commit }} -X truenas-mcp/version.Date={{ .CommitDate }} -X truenas-mcp/version.BuiltBy=goreleaser
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - SECURITY.md
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^test:"
+      - "^chore"
+      - "merge conflict"
+      - Merge pull request
+      - Merge remote-tracking branch
+      - Merge branch
+      - go mod tidy
+  groups:
+    - title: Dependency updates
+      regexp: "^.*feat\\(deps\\)*:+.*$"
+      order: 300
+    - title: "New Features"
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 100
+    - title: "Bug fixes"
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 200
+    - title: "Documentation updates"
+      regexp: "^.*docs[(\\w)]*:+.*$"
+      order: 400
+    - title: Other work
+      order: 9999
+
+nfpms:
+  - file_name_template: "{{ .ConventionalFileName }}"
+    package_name: truenas-mcp
+    homepage: https://github.com/bketelsen/truenas-mcp
+    maintainer: "Brian Ketelsen <bketelsen@gmail.com>"
+    description: |-
+      MCP server that exposes TrueNAS SCALE management to AI assistants.
+    contents:
+      - src: ./completions/truenas-mcp.bash
+        dst: /etc/bash_completion.d/truenas-mcp
+      - src: ./completions/truenas-mcp.fish
+        dst: /usr/share/fish/completions/truenas-mcp.fish
+      - src: ./completions/truenas-mcp.zsh
+        dst: /usr/share/zsh/site-functions/_truenas-mcp
+      - src: ./manpages/truenas-mcp.1.gz
+        dst: /usr/share/man/man1/truenas-mcp.1.gz
+    formats:
+      - deb
+      - rpm
+      - apk
+
+release:
+  mode: replace
+  footer: |
+    **Full Changelog**: https://github.com/bketelsen/{{ .ProjectName }}/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+    ---
+
+    _Released with [GoReleaser Pro](https://goreleaser.com/pro)!_
+
+nightly:
+  # Version of the generated nightly release. nfpm requires it to be semver.
+  version_template: "{{ incmajor .Version }}-dev"
+  # Tag name to create if publish_release is enabled.
+  tag_name: dev
+  # Publish a GitHub pre-release for each nightly.
+  publish_release: true
+  # Delete previous pre-releases for the same tag so only one dev release exists.
+  keep_single_release: true
