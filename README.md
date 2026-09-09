@@ -120,7 +120,7 @@ Tools marked with `*` are excluded by default and are registered only with `--en
 | `truenas_apps_update_report` | Apps with app or container image updates available |
 | `truenas_app_start` | Start an app `*` |
 | `truenas_app_stop` | Stop an app `*` |
-| `truenas_app_restart` | Restart an app `*` |
+| `truenas_app_restart` | Restart an app (redeploys its containers, returns a job ID) `*` |
 | `truenas_app_update` | Upgrade an app to the latest available version `*` |
 | `truenas_app_update_all` | Upgrade all apps with updates available `*` |
 | `truenas_app_configure` | Change an app's configuration values (deep-merged, redeploys the app) `*` |

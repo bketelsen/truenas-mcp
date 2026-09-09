@@ -201,25 +201,44 @@ func TestAppStop_MissingName(t *testing.T) {
 	}
 }
 
-func TestAppRestart_Success(t *testing.T) {
+func TestAppRestart_UsesRedeployAndReturnsJobID(t *testing.T) {
 	mock := &mockCaller{
 		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
-			if method != "app.restart" {
-				t.Errorf("method = %q, want app.restart", method)
+			// app.restart does not exist in TrueNAS SCALE; the restart primitive is app.redeploy.
+			if method != "app.redeploy" {
+				t.Errorf("method = %q, want app.redeploy", method)
 			}
-			if len(params) == 0 || params[0] != "plex" {
+			if len(params) != 1 || params[0] != "plex" {
 				t.Errorf("params = %v, want [plex]", params)
 			}
-			return json.RawMessage(`null`), nil
+			return json.RawMessage(`15122`), nil
 		},
 	}
 	result, err := callTool(t, mock, false, "truenas_app_restart", map[string]any{"name": "plex"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	text := resultText(t, result)
-	if text == "" {
-		t.Error("result text is empty")
+	var got map[string]any
+	if err := json.Unmarshal([]byte(resultText(t, result)), &got); err != nil {
+		t.Fatalf("result is not JSON: %v", err)
+	}
+	if got["name"] != "plex" || got["job_id"] != float64(15122) {
+		t.Errorf("result = %v, want name=plex job_id=15122", got)
+	}
+}
+
+func TestAppRestart_APIError(t *testing.T) {
+	mock := &mockCaller{
+		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+			return nil, fmt.Errorf("[ENOENT] App nope does not exist")
+		},
+	}
+	result, err := callTool(t, mock, false, "truenas_app_restart", map[string]any{"name": "nope"})
+	if err == nil && (result == nil || !result.IsError) {
+		t.Fatal("expected error from app.redeploy")
+	}
+	if result != nil && result.IsError && !strings.Contains(resultText(t, result), "app.redeploy") {
+		t.Errorf("error should name the API call: %s", resultText(t, result))
 	}
 }
 
