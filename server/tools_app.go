@@ -153,8 +153,9 @@ func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 	})
 
 	s.AddTool(&mcp.Tool{
-		Name:        "truenas_app_restart",
-		Description: "Restart an app by name.",
+		Name: "truenas_app_restart",
+		Description: "Restart an app by name by redeploying its containers, and return the TrueNAS job ID. " +
+			"The app is briefly unavailable while the job runs; poll truenas_jobs_list for completion.",
 		InputSchema: schema(map[string]any{
 			"name": stringProp("app name to restart"),
 		}, "name"),
@@ -163,11 +164,20 @@ func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 		if err != nil {
 			return nil, err
 		}
-		result, err := client.Call("app.restart", name)
+		// TrueNAS SCALE has no app.restart method (verified against 25.10.4's
+		// core.get_methods); app.redeploy is the restart primitive and runs as a job.
+		result, err := client.Call("app.redeploy", name)
 		if err != nil {
-			return nil, fmt.Errorf("app.restart: %w", err)
+			return nil, fmt.Errorf("app.redeploy: %w", err)
 		}
-		return jsonResult(result)
+		var jobID any
+		if err := json.Unmarshal(result, &jobID); err != nil {
+			return nil, fmt.Errorf("parsing app.redeploy: %w", err)
+		}
+		return jsonValueResult(map[string]any{
+			"name":   name,
+			"job_id": jobID,
+		})
 	})
 
 	s.AddTool(&mcp.Tool{

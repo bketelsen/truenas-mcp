@@ -185,10 +185,11 @@ Stop a running app.
 - API: `app.stop`
 
 ### `truenas_app_restart` **[write]**
-Restart an app.
+Restart an app by redeploying its containers.
 - Parameters:
   - `name` (string, required) — app name
-- API: `app.restart`
+- API: `app.redeploy` (a job). TrueNAS SCALE has no `app.restart` method — verified against 25.10.4's `core.get_methods`; the tool called it until 2026-09-08 and every invocation failed with "Method does not exist".
+- Returns: `{ "name", "job_id" }`; poll `truenas_jobs_list` for completion.
 
 ### `truenas_app_update` **[write]**
 Upgrade an app to the latest available version and return the job ID.
