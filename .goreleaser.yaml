@@ -16,6 +16,7 @@ project_name: truenas-mcp
 metadata:
   description: truenas-mcp - MCP server exposing TrueNAS SCALE management to AI assistants
   homepage: "https://github.com/bketelsen/truenas-mcp"
+  license: MIT
   maintainers:
     - "Brian Ketelsen <bketelsen@gmail.com>"
 
@@ -102,6 +103,7 @@ nfpms:
     package_name: truenas-mcp
     homepage: https://github.com/bketelsen/truenas-mcp
     maintainer: "Brian Ketelsen <bketelsen@gmail.com>"
+    license: MIT
     description: |-
       MCP server that exposes TrueNAS SCALE management to AI assistants.
     contents:

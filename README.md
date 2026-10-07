@@ -181,3 +181,7 @@ Every tool carries [MCP tool annotations](https://modelcontextprotocol.io/specif
 - apply the client's normal approval policy to the other write tools.
 
 The hints are advisory: the MCP specification tells clients to treat annotations as untrusted unless they come from a trusted server. Read-only mode is the safety boundary: keep the server read-only unless you need writes, and use the hints to add confirmation on top of `--enable-writes`, not instead of it.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
