@@ -15,6 +15,11 @@ func registerDatasetReadTools(s *mcp.Server, client truenas.Caller) {
 		InputSchema: schema(map[string]any{
 			"pool": stringProp("optional pool name to filter datasets"),
 		}),
+		Annotations: &mcp.ToolAnnotations{
+			Title:         "List Datasets",
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		params := []any{}
 		if pool := optionalString(req, "pool"); pool != "" {
@@ -33,6 +38,11 @@ func registerDatasetReadTools(s *mcp.Server, client truenas.Caller) {
 		InputSchema: schema(map[string]any{
 			"path": stringProp("full dataset path (e.g. tank/data)"),
 		}, "path"),
+		Annotations: &mcp.ToolAnnotations{
+			Title:         "Get Dataset",
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		path, err := requireString(req, "path")
 		if err != nil {
@@ -56,6 +66,13 @@ func registerDatasetWriteTools(s *mcp.Server, client truenas.Caller) {
 			"comments":    stringProp("optional description"),
 			"compression": stringProp("compression algorithm (e.g. lz4, zstd, off)"),
 		}, "name"),
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Create Dataset",
+			ReadOnlyHint:    false,
+			DestructiveHint: new(false),
+			IdempotentHint:  true, // TrueNAS rejects a dataset path that already exists
+			OpenWorldHint:   new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		name, err := requireString(req, "name")
 		if err != nil {
@@ -81,6 +98,13 @@ func registerDatasetWriteTools(s *mcp.Server, client truenas.Caller) {
 		InputSchema: schema(map[string]any{
 			"path": stringProp("full dataset path to delete (e.g. tank/olddata)"),
 		}, "path"),
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Delete Dataset",
+			ReadOnlyHint:    false,
+			DestructiveHint: new(true),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		path, err := requireString(req, "path")
 		if err != nil {

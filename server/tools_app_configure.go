@@ -38,6 +38,13 @@ func registerAppConfigureTools(s *mcp.Server, client truenas.Caller) {
 			"values":  objectProp("partial configuration to merge, e.g. {\"network\": {\"web_port\": {\"port_number\": 30990}}}"),
 			"dry_run": boolProp("when true, return the merged configuration and changed paths without calling app.update"),
 		}, "name", "values"),
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Configure App",
+			ReadOnlyHint:    false,
+			DestructiveHint: new(true), // overwrites stored config values (lists replaced whole); TrueNAS keeps no prior copy
+			IdempotentHint:  false,     // the no-op guard reads stored config, which an in-flight job may not have written yet
+			OpenWorldHint:   new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		name, err := requireString(req, "name")
 		if err != nil {

@@ -149,3 +149,35 @@ Tools marked with `*` are excluded by default and are registered only with `--en
 | `truenas_app_update_all` | Upgrade all apps with updates available `*` |
 | `truenas_app_configure` | Change an app's configuration values (deep-merged, redeploys the app) `*` |
 | `truenas_jobs_list` | Recent TrueNAS jobs, optionally filtered by state or method |
+
+## Tool Annotations
+
+Every tool carries [MCP tool annotations](https://modelcontextprotocol.io/specification/2025-06-18/schema#toolannotations): a `title` plus `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint`. Clients can use them to decide how much confirmation a call needs. `openWorldHint` is `false` on every tool, because the server only talks to the one appliance it is configured for.
+
+**Read-only** (`readOnlyHint: true`): every tool registered without `--enable-writes`. They query the appliance and change nothing. `truenas_app_config` is read-only but can return plaintext secrets.
+
+**Destructive** (`destructiveHint: true`): these can lose data or settings, or are hard to undo.
+
+| Tool | Why it is destructive |
+|------|-----------------------|
+| `truenas_dataset_delete` | Deletes the dataset and the data in it |
+| `truenas_snapshot_delete` | Deletes the snapshot |
+| `truenas_smb_delete` | Removes the share's settings and cuts off clients (the data stays) |
+| `truenas_nfs_delete` | Removes the export's settings and cuts off clients (the data stays) |
+| `truenas_app_configure` | Overwrites stored configuration values; TrueNAS keeps no prior copy |
+| `truenas_app_update` | TrueNAS can roll back the app version and its ix-volumes, but this server does not snapshot host paths, so data migrations the new version runs there are one-way |
+| `truenas_app_update_all` | The same as `truenas_app_update`, for every app with an update at once |
+
+**Non-destructive writes** (`destructiveHint: false`): these are additive or recoverable. They are `truenas_dataset_create`, `truenas_snapshot_create`, `truenas_smb_create`, `truenas_nfs_create`, `truenas_alert_dismiss`, `truenas_app_start`, `truenas_app_stop`, and `truenas_app_restart`. Starting or restarting an app still interrupts it briefly, and `truenas_smb_create` with `guest_ok` widens access.
+
+`idempotentHint: true` marks the write tools where repeating a call with the same arguments has no further effect: the four deletes, `truenas_dataset_create`, `truenas_smb_create`, `truenas_alert_dismiss`, `truenas_app_stop`, `truenas_app_update`, and `truenas_app_update_all`.
+
+### Using the hints with `--enable-writes`
+
+`--enable-writes` decides whether write tools exist at all. The annotations help a client decide what to do with the ones that do. A reasonable client policy is:
+
+- run read-only tools without asking;
+- always ask a person before a destructive tool;
+- apply the client's normal approval policy to the other write tools.
+
+The hints are advisory: the MCP specification tells clients to treat annotations as untrusted unless they come from a trusted server. Read-only mode is the safety boundary: keep the server read-only unless you need writes, and use the hints to add confirmation on top of `--enable-writes`, not instead of it.

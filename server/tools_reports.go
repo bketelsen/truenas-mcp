@@ -27,6 +27,11 @@ func registerHealthReportTools(s *mcp.Server, client truenas.Caller) {
 		Name:        "truenas_health_report",
 		Description: "Return a read-only health report aggregated from system state, pools, disks, and alerts.",
 		InputSchema: noArgs(),
+		Annotations: &mcp.ToolAnnotations{
+			Title:         "Health Report",
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		report := map[string]any{
 			"summary": map[string]any{
@@ -126,6 +131,11 @@ func registerJobReadTools(s *mcp.Server, client truenas.Caller) {
 			"method": stringProp("optional job method filter"),
 			"limit":  numberProp("maximum jobs to return, default 50"),
 		}),
+		Annotations: &mcp.ToolAnnotations{
+			Title:         "List Jobs",
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		filters := [][]any{}
 		if state := optionalString(req, "state"); state != "" {

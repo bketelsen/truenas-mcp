@@ -16,6 +16,11 @@ func registerSnapshotReadTools(s *mcp.Server, client truenas.Caller) {
 		InputSchema: schema(map[string]any{
 			"dataset": stringProp("dataset path to list snapshots for"),
 		}, "dataset"),
+		Annotations: &mcp.ToolAnnotations{
+			Title:         "List Snapshots",
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		dataset, err := requireString(req, "dataset")
 		if err != nil {
@@ -34,6 +39,11 @@ func registerSnapshotReadTools(s *mcp.Server, client truenas.Caller) {
 		InputSchema: schema(map[string]any{
 			"name": stringProp("full snapshot name (e.g. tank/data@snap1)"),
 		}, "name"),
+		Annotations: &mcp.ToolAnnotations{
+			Title:         "Get Snapshot",
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		name, err := requireString(req, "name")
 		if err != nil {
@@ -56,6 +66,13 @@ func registerSnapshotWriteTools(s *mcp.Server, client truenas.Caller) {
 			"dataset": stringProp("dataset path to snapshot (e.g. tank/data)"),
 			"name":    stringProp("optional snapshot name (auto-generates if omitted)"),
 		}, "dataset"),
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Create Snapshot",
+			ReadOnlyHint:    false,
+			DestructiveHint: new(false),
+			IdempotentHint:  false, // without a name, every call creates a new timestamped snapshot
+			OpenWorldHint:   new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		dataset, err := requireString(req, "dataset")
 		if err != nil {
@@ -82,6 +99,13 @@ func registerSnapshotWriteTools(s *mcp.Server, client truenas.Caller) {
 		InputSchema: schema(map[string]any{
 			"name": stringProp("full snapshot name to delete (e.g. tank/data@snap1)"),
 		}, "name"),
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Delete Snapshot",
+			ReadOnlyHint:    false,
+			DestructiveHint: new(true),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		name, err := requireString(req, "name")
 		if err != nil {

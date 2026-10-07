@@ -14,6 +14,11 @@ func registerAppReadTools(s *mcp.Server, client truenas.Caller) {
 		Name:        "truenas_app_list",
 		Description: "List all installed apps with name, version, status (running/stopped), and update availability.",
 		InputSchema: noArgs(),
+		Annotations: &mcp.ToolAnnotations{
+			Title:         "List Apps",
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		result, err := client.Call("app.query")
 		if err != nil {
@@ -28,6 +33,11 @@ func registerAppReadTools(s *mcp.Server, client truenas.Caller) {
 		InputSchema: schema(map[string]any{
 			"name": stringProp("app name to inspect"),
 		}, "name"),
+		Annotations: &mcp.ToolAnnotations{
+			Title:         "Get App",
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		name, err := requireString(req, "name")
 		if err != nil {
@@ -49,6 +59,11 @@ func registerAppReadTools(s *mcp.Server, client truenas.Caller) {
 		InputSchema: schema(map[string]any{
 			"name": stringProp("app name whose configuration to inspect"),
 		}, "name"),
+		Annotations: &mcp.ToolAnnotations{
+			Title:         "Get App Configuration",
+			ReadOnlyHint:  true, // no side effects, but the result can hold plaintext secrets
+			OpenWorldHint: new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		name, err := requireString(req, "name")
 		if err != nil {
@@ -72,6 +87,11 @@ func registerAppReadTools(s *mcp.Server, client truenas.Caller) {
 		Name:        "truenas_apps_update_report",
 		Description: "Report installed apps with TrueNAS app or container image updates available.",
 		InputSchema: noArgs(),
+		Annotations: &mcp.ToolAnnotations{
+			Title:         "App Update Report",
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		result, err := client.Call("app.query")
 		if err != nil {
@@ -122,6 +142,13 @@ func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 		InputSchema: schema(map[string]any{
 			"name": stringProp("app name to start"),
 		}, "name"),
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Start App",
+			ReadOnlyHint:    false,
+			DestructiveHint: new(false),
+			IdempotentHint:  false, // app.start always force-recreates containers, so starting a running app restarts it
+			OpenWorldHint:   new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		name, err := requireString(req, "name")
 		if err != nil {
@@ -140,6 +167,13 @@ func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 		InputSchema: schema(map[string]any{
 			"name": stringProp("app name to stop"),
 		}, "name"),
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Stop App",
+			ReadOnlyHint:    false,
+			DestructiveHint: new(false), // compose down keeps volumes and images; truenas_app_start reverses it
+			IdempotentHint:  true,
+			OpenWorldHint:   new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		name, err := requireString(req, "name")
 		if err != nil {
@@ -159,6 +193,13 @@ func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 		InputSchema: schema(map[string]any{
 			"name": stringProp("app name to restart"),
 		}, "name"),
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Restart App",
+			ReadOnlyHint:    false,
+			DestructiveHint: new(false), // redeploys containers with the stored config; no data or config changes
+			IdempotentHint:  false,      // every call redeploys again
+			OpenWorldHint:   new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		name, err := requireString(req, "name")
 		if err != nil {
@@ -186,6 +227,13 @@ func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 		InputSchema: schema(map[string]any{
 			"name": stringProp("app name to upgrade"),
 		}, "name"),
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Update App",
+			ReadOnlyHint:    false,
+			DestructiveHint: new(true), // host paths aren't snapshotted, so app.rollback can't undo data migrations there
+			IdempotentHint:  true,      // app.upgrade runs under a per-app lock and refuses once no upgrade is available
+			OpenWorldHint:   new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		name, err := requireString(req, "name")
 		if err != nil {
@@ -223,6 +271,13 @@ func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 		Name:        "truenas_app_update_all",
 		Description: "Upgrade all apps with updates available and return the TrueNAS job IDs.",
 		InputSchema: noArgs(),
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Update All Apps",
+			ReadOnlyHint:    false,
+			DestructiveHint: new(true), // truenas_app_update's host-path risk, for every app with an update at once
+			IdempotentHint:  true,      // as truenas_app_update, per app
+			OpenWorldHint:   new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		result, err := client.Call("app.query", [][]any{{"upgrade_available", "=", true}})
 		if err != nil {
@@ -275,6 +330,9 @@ func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 }
 
 func upgradeApp(client truenas.Caller, name string) (any, error) {
+	// snapshot_hostpaths is false, so TrueNAS snapshots only the app's ix-volumes
+	// before upgrading; app.rollback cannot restore host-path data. This is why
+	// truenas_app_update and truenas_app_update_all are annotated destructive.
 	result, err := client.Call("app.upgrade", name, map[string]any{
 		"app_version":        "latest",
 		"values":             map[string]any{},

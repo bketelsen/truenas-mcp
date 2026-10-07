@@ -54,6 +54,11 @@ func registerSystemTools(s *mcp.Server, client truenas.Caller) {
 		Name:        "truenas_system_info",
 		Description: "Get TrueNAS system information including hostname, version, uptime, and platform.",
 		InputSchema: noArgs(),
+		Annotations: &mcp.ToolAnnotations{
+			Title:         "System Info",
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		result, err := client.Call("system.info")
 		if err != nil {
@@ -66,6 +71,11 @@ func registerSystemTools(s *mcp.Server, client truenas.Caller) {
 		Name:        "truenas_disk_list",
 		Description: "List all physical disks with name, size, model, serial, and health status.",
 		InputSchema: noArgs(),
+		Annotations: &mcp.ToolAnnotations{
+			Title:         "List Disks",
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		result, err := client.Call("disk.query")
 		if err != nil {
@@ -78,6 +88,11 @@ func registerSystemTools(s *mcp.Server, client truenas.Caller) {
 		Name:        "truenas_network_list",
 		Description: "List network interfaces with IP addresses and link status.",
 		InputSchema: noArgs(),
+		Annotations: &mcp.ToolAnnotations{
+			Title:         "List Network Interfaces",
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		result, err := client.Call("interface.query")
 		if err != nil {

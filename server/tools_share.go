@@ -13,6 +13,11 @@ func registerShareReadTools(s *mcp.Server, client truenas.Caller) {
 		Name:        "truenas_smb_list",
 		Description: "List all SMB shares with name, path, and enabled status.",
 		InputSchema: noArgs(),
+		Annotations: &mcp.ToolAnnotations{
+			Title:         "List SMB Shares",
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		result, err := client.Call("sharing.smb.query")
 		if err != nil {
@@ -25,6 +30,11 @@ func registerShareReadTools(s *mcp.Server, client truenas.Caller) {
 		Name:        "truenas_nfs_list",
 		Description: "List all NFS exports with path, networks, and enabled status.",
 		InputSchema: noArgs(),
+		Annotations: &mcp.ToolAnnotations{
+			Title:         "List NFS Exports",
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		result, err := client.Call("sharing.nfs.query")
 		if err != nil {
@@ -45,6 +55,13 @@ func registerShareWriteTools(s *mcp.Server, client truenas.Caller) {
 			"comment":  stringProp("optional description"),
 			"guest_ok": boolProp("allow guest access (default false)"),
 		}, "name", "path"),
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Create SMB Share",
+			ReadOnlyHint:    false,
+			DestructiveHint: new(false), // additive and undone by truenas_smb_delete; guest_ok widens access but loses no data
+			IdempotentHint:  true,       // TrueNAS rejects a second share with the same name
+			OpenWorldHint:   new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		name, err := requireString(req, "name")
 		if err != nil {
@@ -74,6 +91,13 @@ func registerShareWriteTools(s *mcp.Server, client truenas.Caller) {
 		InputSchema: schema(map[string]any{
 			"id": numberProp("share ID to delete"),
 		}, "id"),
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Delete SMB Share",
+			ReadOnlyHint:    false,
+			DestructiveHint: new(true), // the share's settings are lost and clients are cut off, though the data stays
+			IdempotentHint:  true,
+			OpenWorldHint:   new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		id, err := requireFloat64(req, "id")
 		if err != nil {
@@ -94,6 +118,13 @@ func registerShareWriteTools(s *mcp.Server, client truenas.Caller) {
 			"networks": arrayProp("allowed networks (e.g. 192.168.1.0/24)"),
 			"hosts":    arrayProp("allowed hosts"),
 		}, "path"),
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Create NFS Export",
+			ReadOnlyHint:    false,
+			DestructiveHint: new(false),
+			IdempotentHint:  false, // an export open to everybody (no hosts or networks) can be created twice
+			OpenWorldHint:   new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		path, err := requireString(req, "path")
 		if err != nil {
@@ -119,6 +150,13 @@ func registerShareWriteTools(s *mcp.Server, client truenas.Caller) {
 		InputSchema: schema(map[string]any{
 			"id": numberProp("export ID to delete"),
 		}, "id"),
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Delete NFS Export",
+			ReadOnlyHint:    false,
+			DestructiveHint: new(true), // the export's settings are lost and clients are cut off, though the data stays
+			IdempotentHint:  true,
+			OpenWorldHint:   new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		id, err := requireFloat64(req, "id")
 		if err != nil {
