@@ -78,6 +78,10 @@ _Avoid_: task, operation, process
 > **Dev:** Can I check which Apps have updates before running it?
 >
 > **Domain expert:** Yes — `truenas_apps_update_report` is a Report that lists Apps with available updates. Read-only, no side effects, no Job IDs returned.
+>
+> **Dev:** And if an update breaks the App's data?
+>
+> **Domain expert:** Before upgrading, TrueNAS takes a Snapshot of each Dataset holding the App's host paths, named `ix-app-upgrade-<app>-<previous version>`, as well as of its ix-volumes. Rolling the App back in TrueNAS restores only the ix-volumes. The host-path Snapshots have to be rolled back by hand, which reverts the whole Dataset. Custom Apps get no Snapshots.
 
 > **User:** Can I change how an App is configured, like its port or memory limit?
 >

@@ -165,12 +165,23 @@ Every tool carries [MCP tool annotations](https://modelcontextprotocol.io/specif
 | `truenas_smb_delete` | Removes the share's settings and cuts off clients (the data stays) |
 | `truenas_nfs_delete` | Removes the export's settings and cuts off clients (the data stays) |
 | `truenas_app_configure` | Overwrites stored configuration values; TrueNAS keeps no prior copy |
-| `truenas_app_update` | TrueNAS can roll back the app version and its ix-volumes, but this server does not snapshot host paths, so data migrations the new version runs there are one-way |
+| `truenas_app_update` | The upgrade snapshots the app's host-path datasets as well as its ix-volumes, but TrueNAS's app rollback restores only the ix-volumes. Undoing changes on host paths means rolling a dataset back by hand, which also reverts anything else stored in it (see [App updates and recovery](#app-updates-and-recovery)) |
 | `truenas_app_update_all` | The same as `truenas_app_update`, for every app with an update at once |
 
 **Non-destructive writes** (`destructiveHint: false`): these are additive or recoverable. They are `truenas_dataset_create`, `truenas_snapshot_create`, `truenas_smb_create`, `truenas_nfs_create`, `truenas_alert_dismiss`, `truenas_app_start`, `truenas_app_stop`, and `truenas_app_restart`. Starting or restarting an app still interrupts it briefly, and `truenas_smb_create` with `guest_ok` widens access.
 
 `idempotentHint: true` marks the write tools where repeating a call with the same arguments has no further effect: the four deletes, `truenas_dataset_create`, `truenas_smb_create`, `truenas_alert_dismiss`, `truenas_app_stop`, `truenas_app_update`, and `truenas_app_update_all`.
+
+### App updates and recovery
+
+`truenas_app_update` and `truenas_app_update_all` call TrueNAS `app.upgrade` with `snapshot_hostpaths: true`. Before the new version runs, TrueNAS (25.10) stops the app and snapshots:
+
+- **Host paths**: every bind-mounted path outside `/mnt/.ix-apps` is mapped to the ZFS dataset it lives on, and that whole dataset is snapshotted (not recursively) as `<dataset>@ix-app-upgrade-<app>-<previous version>`. A host path that is a subdirectory snapshots the dataset that contains it. Paths that are not on a ZFS pool are skipped, and the upgrade goes ahead without them.
+- **ix-volumes**: the app's ix-volumes dataset is snapshotted recursively as `@<previous version>`. This is the snapshot an app rollback restores.
+
+Custom (compose) apps are the exception: their update only pulls new images, and TrueNAS takes no snapshots for them.
+
+To undo a bad upgrade, first roll the app back in the TrueNAS UI (TrueNAS only rolls back a running app); that restores the previous version and its ix-volumes. Then stop the app (`truenas_app_stop`), roll each host-path dataset back to its `ix-app-upgrade-…` snapshot from the dataset's **Manage Snapshots** list, and start the app again. That rollback reverts everything in the dataset, including files other apps keep there, and ZFS has to destroy any newer snapshots of the dataset (for example from a periodic snapshot task) to do it. TrueNAS never deletes these snapshots itself. They take little space at first but hold on to data that is later changed or deleted, so remove old ones with `truenas_snapshot_delete` once you trust the new version.
 
 ### Using the hints with `--enable-writes`
 
