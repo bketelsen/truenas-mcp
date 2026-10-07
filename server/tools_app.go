@@ -222,15 +222,18 @@ func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 	})
 
 	s.AddTool(&mcp.Tool{
-		Name:        "truenas_app_update",
-		Description: "Upgrade a named app to its latest available version and return the TrueNAS job ID.",
+		Name: "truenas_app_update",
+		Description: "Upgrade a named app to its latest available version and return the TrueNAS job ID. " +
+			"Before upgrading, TrueNAS stops the app and snapshots its ix-volumes and each ZFS dataset holding one of its host paths " +
+			"(as <dataset>@ix-app-upgrade-<app>-<previous version>). An app rollback restores only the ix-volumes; " +
+			"host-path snapshots must be rolled back by hand, and custom apps get no snapshots.",
 		InputSchema: schema(map[string]any{
 			"name": stringProp("app name to upgrade"),
 		}, "name"),
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Update App",
 			ReadOnlyHint:    false,
-			DestructiveHint: new(true), // host paths aren't snapshotted, so app.rollback can't undo data migrations there
+			DestructiveHint: new(true), // host paths are snapshotted, but app.rollback can't restore them (see upgradeApp)
 			IdempotentHint:  true,      // app.upgrade runs under a per-app lock and refuses once no upgrade is available
 			OpenWorldHint:   new(false),
 		},
@@ -268,13 +271,14 @@ func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 	})
 
 	s.AddTool(&mcp.Tool{
-		Name:        "truenas_app_update_all",
-		Description: "Upgrade all apps with updates available and return the TrueNAS job IDs.",
+		Name: "truenas_app_update_all",
+		Description: "Upgrade all apps with updates available and return the TrueNAS job IDs. " +
+			"Each upgrade snapshots that app's ix-volumes and host-path datasets first, as truenas_app_update does.",
 		InputSchema: noArgs(),
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Update All Apps",
 			ReadOnlyHint:    false,
-			DestructiveHint: new(true), // truenas_app_update's host-path risk, for every app with an update at once
+			DestructiveHint: new(true), // truenas_app_update's manual host-path restore, for every app with an update at once
 			IdempotentHint:  true,      // as truenas_app_update, per app
 			OpenWorldHint:   new(false),
 		},
@@ -330,13 +334,26 @@ func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 }
 
 func upgradeApp(client truenas.Caller, name string) (any, error) {
-	// snapshot_hostpaths is false, so TrueNAS snapshots only the app's ix-volumes
-	// before upgrading; app.rollback cannot restore host-path data. This is why
-	// truenas_app_update and truenas_app_update_all are annotated destructive.
+	// snapshot_hostpaths: true makes app.upgrade snapshot the app's host paths,
+	// not only its ix-volumes, before the new version runs, so host-path data
+	// (where most apps keep theirs) survives a bad upgrade or data migration.
+	// TrueNAS 25.10 middleware (plugins/apps/upgrade.py,
+	// take_snapshot_of_hostpath_and_stop_app):
+	//   - each bind-mount source outside /mnt/.ix-apps is mapped to the ZFS
+	//     dataset mounted there or containing it, and that whole dataset is
+	//     snapshotted non-recursively as <dataset>@ix-app-upgrade-<app>-<old version>;
+	//   - paths not on ZFS, on the boot pool, or missing are skipped, and the
+	//     upgrade continues, so true never fails an upgrade over a path that
+	//     isn't a dataset;
+	//   - custom apps take an image-pull path that snapshots nothing.
+	// app.rollback (plugins/apps/rollback.py) restores only the ix-volumes
+	// snapshot. Host-path snapshots are restored by hand, and a ZFS rollback
+	// reverts everything in that dataset, including other apps' data there.
+	// That is why truenas_app_update and truenas_app_update_all stay destructive.
 	result, err := client.Call("app.upgrade", name, map[string]any{
 		"app_version":        "latest",
 		"values":             map[string]any{},
-		"snapshot_hostpaths": false,
+		"snapshot_hostpaths": true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("app.upgrade: %w", err)

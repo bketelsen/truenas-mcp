@@ -43,8 +43,11 @@ var wantToolHints = map[string]toolHints{
 	"truenas_smb_delete":      {destructive: true, idempotent: true},
 	"truenas_nfs_delete":      {destructive: true, idempotent: true},
 	"truenas_app_configure":   {destructive: true},
-	"truenas_app_update":      {destructive: true, idempotent: true},
-	"truenas_app_update_all":  {destructive: true, idempotent: true},
+	// The app updates snapshot ix-volumes and host-path datasets first, but
+	// app.rollback restores only the ix-volumes, so host-path recovery is a
+	// manual ZFS rollback; see upgradeApp in tools_app.go.
+	"truenas_app_update":     {destructive: true, idempotent: true},
+	"truenas_app_update_all": {destructive: true, idempotent: true},
 
 	// Non-destructive writes: additive or recoverable.
 	"truenas_dataset_create":  {idempotent: true},

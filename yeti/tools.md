@@ -197,12 +197,15 @@ Restart an app by redeploying its containers.
 Upgrade an app to the latest available version and return the job ID.
 - Parameters:
   - `name` (string, required) — app name
-- API: `app.query` with filter `[["name", "=", name]]`, then `app.upgrade`
+- API: `app.query` with filter `[["name", "=", name]]`, then `app.upgrade` with `{"app_version": "latest", "values": {}, "snapshot_hostpaths": true}` (via `upgradeApp`)
+- Returns: `{ "name", "job_id" }`; poll `truenas_jobs_list` for completion.
+- Snapshots: TrueNAS stops the app and snapshots each host path's containing ZFS dataset as `<dataset>@ix-app-upgrade-<app>-<old version>` (non-recursive; non-ZFS paths skipped), plus the ix-volumes as `@<old version>`. `app.rollback` restores only the ix-volumes, so the tool stays `destructiveHint: true`. Custom apps get no snapshots. Details in `yeti/OVERVIEW.md` under "App Upgrade Snapshots".
 
 ### `truenas_app_update_all` **[write]**
 Upgrade all apps with updates available and return the job IDs.
 - Parameters: none
-- API: `app.query` with filter `[["upgrade_available", "=", true]]`, then `app.upgrade` for each app
+- API: `app.query` with filter `[["upgrade_available", "=", true]]`, then `app.upgrade` for each app, with the same options and snapshots as `truenas_app_update`
+- Returns: `{ "summary", "jobs": [{ "name", "job_id" }], "failures": [{ "name", "error" }] }`
 
 ## Job Tools (`tools_reports.go`)
 

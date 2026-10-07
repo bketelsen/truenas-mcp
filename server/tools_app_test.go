@@ -284,6 +284,11 @@ func TestAppUpdate_SuccessReturnsJobID(t *testing.T) {
 				if options["app_version"] != "latest" {
 					t.Fatalf("app_version = %v, want latest", options["app_version"])
 				}
+				if options["snapshot_hostpaths"] != true {
+					// Errorf, not Fatalf: this runs on the server's handler goroutine.
+					t.Errorf("snapshot_hostpaths = %v, want true so host-path data is snapshotted", options["snapshot_hostpaths"])
+					return nil, fmt.Errorf("snapshot_hostpaths not true")
+				}
 				return json.RawMessage(`123`), nil
 			default:
 				t.Fatalf("unexpected method %q", method)
@@ -366,6 +371,10 @@ func TestAppUpdateAll_SuccessReturnsJobIDs(t *testing.T) {
 				if len(params) != 2 {
 					t.Fatalf("app.upgrade params = %v, want [name options]", params)
 				}
+				if options, ok := params[1].(map[string]any); !ok || options["snapshot_hostpaths"] != true {
+					t.Errorf("app.upgrade options = %v, want snapshot_hostpaths true", params[1])
+					return nil, fmt.Errorf("snapshot_hostpaths not true")
+				}
 				switch params[0] {
 				case "plex":
 					return json.RawMessage(`201`), nil
@@ -420,6 +429,10 @@ func TestAppUpdateAll_PartialSuccessReturnsStartedJobIDsAndFailures(t *testing.T
 			case "app.upgrade":
 				if len(params) != 2 {
 					t.Fatalf("app.upgrade params = %v, want [name options]", params)
+				}
+				if options, ok := params[1].(map[string]any); !ok || options["snapshot_hostpaths"] != true {
+					t.Errorf("app.upgrade options = %v, want snapshot_hostpaths true", params[1])
+					return nil, fmt.Errorf("snapshot_hostpaths not true")
 				}
 				switch params[0] {
 				case "plex":

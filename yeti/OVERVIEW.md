@@ -83,9 +83,22 @@ Every tool also sets `Annotations: &mcp.ToolAnnotations{...}` (go-sdk v1.4.0 fie
 - Tools registered in read-only mode set `ReadOnlyHint: true`.
 - Write tools set `ReadOnlyHint: false` and an explicit `DestructiveHint` (the MCP default when omitted is true). `true` means the call can lose data or settings or is hard to undo (deletes, `truenas_app_configure`, `truenas_app_update`, `truenas_app_update_all`); `false` means additive or recoverable.
 - `IdempotentHint: true` only when a repeat call with the same arguments has no further effect on the appliance.
-- Non-obvious classifications carry a trailing one-line comment explaining why (e.g. app updates are destructive because `upgradeApp` sends `snapshot_hostpaths: false`, so `app.rollback` cannot restore host-path data; `truenas_app_start` is not idempotent because `app.start` always runs `compose up --force-recreate`).
+- Non-obvious classifications carry a trailing one-line comment explaining why (e.g. app updates stay destructive even though `upgradeApp` sends `snapshot_hostpaths: true`, because `app.rollback` restores only the ix-volumes snapshot and host-path snapshots need a manual ZFS rollback; `truenas_app_start` is not idempotent because `app.start` always runs `compose up --force-recreate`).
 
 Clients such as agent harnesses use these hints to decide what needs human confirmation (run read-only tools freely, always confirm destructive ones). A new tool must be added to `wantToolHints` in `server/annotations_test.go` and to the README's "Tool Annotations" section, or the tests fail.
+
+### App Upgrade Snapshots
+
+`truenas_app_update` and `truenas_app_update_all` both go through `upgradeApp` in `server/tools_app.go`, which calls `app.upgrade(name, {"app_version": "latest", "values": {}, "snapshot_hostpaths": true})` and returns the job ID. `tools_app_test.go` asserts `snapshot_hostpaths` is `true` on every `app.upgrade` call. The middleware default is `false` (`api/v25_10_0/app.py` `UpgradeOptions`). Behavior in the TrueNAS 25.10 middleware (checked at `TS-25.10.0`; the snapshot and rollback logic is unchanged through `TS-25.10.7`):
+
+- `app.upgrade` (`plugins/apps/upgrade.py`) refuses stopped apps and apps with no upgrade before doing anything. Then `take_snapshot_of_hostpath_and_stop_app` lists host paths, stops the app, and, when `snapshot_hostpaths` is true, snapshots each host path's dataset as `<dataset>@ix-app-upgrade-<app>-<old version>` (`get_upgrade_snap_name` in `plugins/apps/utils.py`).
+- Host paths come from `app.get_hostpaths_datasets` (`plugins/apps/resources.py`): every container mount source in `active_workloads.volumes` not under `/mnt/.ix-apps/`, resolved by `paths_to_datasets_impl` (`plugins/zfs_/utils.py`). That function statx()es the path and reads the mount's source, so a subdirectory resolves to the dataset that contains it. Paths not on ZFS, on the boot pool, or that fail to stat map to `None` and are skipped with a debug log. The upgrade continues, so `true` does not make upgrades fail for host paths that are not datasets.
+- Snapshots are non-recursive (`zfs.snapshot.create` default), so child datasets under a host path are not captured. If a snapshot with that name already exists it is kept rather than replaced. That dedupes several host paths in one dataset, but a retried upgrade from the same version reuses the older snapshot. A failed snapshot fails the job with the app already stopped.
+- Custom apps (and `ix-app` image-only updates) take an early image-pull-and-redeploy branch with no snapshots at all.
+- ix-volumes are snapshotted separately and unconditionally: `<ix-volumes ds>@<old version>`, recursive, replacing any existing one.
+- `app.rollback` (`plugins/apps/rollback.py`) rolls back only `<ix-volumes ds>@<version>` (when `rollback_snapshot` is true). It never touches `ix-app-upgrade-*` snapshots, and nothing in the middleware deletes them.
+
+That last point is why both update tools keep `DestructiveHint: true`. Host-path data is now recoverable, but only by a manual `zfs rollback` of the whole dataset, which also reverts other apps that share the dataset and destroys newer snapshots. The README's "App updates and recovery" section is the user-facing version of this. Do not mark the update tools non-destructive unless the server also gains a tool that restores the host-path snapshots, or TrueNAS's rollback starts doing it.
 
 ### Read-Only Mode
 
