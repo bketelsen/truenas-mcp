@@ -15,6 +15,11 @@ func registerAlertReadTools(s *mcp.Server, client truenas.Caller) {
 		InputSchema: schema(map[string]any{
 			"level": stringProp("filter by alert level: INFO, WARNING, CRITICAL, or empty for all"),
 		}),
+		Annotations: &mcp.ToolAnnotations{
+			Title:         "List Alerts",
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		params := []any{}
 		if level := optionalString(req, "level"); level != "" {
@@ -36,6 +41,13 @@ func registerAlertWriteTools(s *mcp.Server, client truenas.Caller) {
 		InputSchema: schema(map[string]any{
 			"id": stringProp("alert ID to dismiss"),
 		}, "id"),
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Dismiss Alert",
+			ReadOnlyHint:    false,
+			DestructiveHint: new(false), // hides or clears a notification; no appliance data or config changes
+			IdempotentHint:  true,
+			OpenWorldHint:   new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		id, err := requireString(req, "id")
 		if err != nil {

@@ -78,6 +78,15 @@ Report-style read tools are registered alongside the domain tools: `tools_report
 
 Each tool is defined inline with `s.AddTool(&mcp.Tool{...}, handlerFunc)`. The handler uses typed accessors from `server/params.go` to read MCP arguments, calls the TrueNAS API, and returns pretty-printed JSON.
 
+Every tool also sets `Annotations: &mcp.ToolAnnotations{...}` (go-sdk v1.4.0 field types: `ReadOnlyHint bool`, `DestructiveHint *bool`, `IdempotentHint bool`, `OpenWorldHint *bool`, `Title string`; the pointers use Go 1.26 `new(false)` / `new(true)`). Rules, enforced by `server/annotations_test.go`:
+- `Title` is always set, and `OpenWorldHint` is always `new(false)` — the only world is the one appliance.
+- Tools registered in read-only mode set `ReadOnlyHint: true`.
+- Write tools set `ReadOnlyHint: false` and an explicit `DestructiveHint` (the MCP default when omitted is true). `true` means the call can lose data or settings or is hard to undo (deletes, `truenas_app_configure`, `truenas_app_update`, `truenas_app_update_all`); `false` means additive or recoverable.
+- `IdempotentHint: true` only when a repeat call with the same arguments has no further effect on the appliance.
+- Non-obvious classifications carry a trailing one-line comment explaining why (e.g. app updates are destructive because `upgradeApp` sends `snapshot_hostpaths: false`, so `app.rollback` cannot restore host-path data; `truenas_app_start` is not idempotent because `app.start` always runs `compose up --force-recreate`).
+
+Clients such as agent harnesses use these hints to decide what needs human confirmation (run read-only tools freely, always confirm destructive ones). A new tool must be added to `wantToolHints` in `server/annotations_test.go` and to the README's "Tool Annotations" section, or the tests fail.
+
 ### Read-Only Mode
 
 Read-only mode is the default. Unless writes are explicitly enabled with `--enable-writes` or `TRUENAS_ENABLE_WRITES=true`, mutating tools (create, delete, start, stop, restart, dismiss, update) are never registered. AI clients cannot see or invoke them.
@@ -157,11 +166,12 @@ Tests use the `Caller` interface for dependency injection — no real TrueNAS se
 
 - **`mockCaller`** — implements `truenas.Caller` with a `CallFunc` field for injecting per-test responses
 - **`callTool()`** — spins up a full MCP server + client via the SDK's `InMemoryTransport`, then calls a tool by name. This tests the complete path: tool registration → argument parsing → API call → response formatting
+- **`listTools()` / `listToolDefs()`** — spin up the same in-memory server + client and return the registered tool names, or the full `*mcp.Tool` definitions (with annotations) as a client receives them
 - **`resultText()`** — extracts the text content from a `CallToolResult`
 
 ### Test Organization
 
-Each `tools_*.go` file has corresponding `tools_*_test.go` coverage for read and write tools, plus report/update coverage such as `tools_reports_test.go` and `tools_app_update_report_test.go`. `helpers_test.go` covers the schema/result helpers, and `params_test.go` covers the typed parameter accessors. `server_test.go` tests `New()` for correct read-only vs read-write tool registration. `cmd/serve_test.go` tests environment variable handling and command validation (e.g., missing host/API key errors).
+Each `tools_*.go` file has corresponding `tools_*_test.go` coverage for read and write tools, plus report/update coverage such as `tools_reports_test.go` and `tools_app_update_report_test.go`. `helpers_test.go` covers the schema/result helpers, and `params_test.go` covers the typed parameter accessors. `server_test.go` tests `New()` for correct read-only vs read-write tool registration. `annotations_test.go` checks every tool's annotations in both registration modes and pins each tool's classification to the `wantToolHints` table. `cmd/serve_test.go` tests environment variable handling and command validation (e.g., missing host/API key errors).
 
 ## CI
 

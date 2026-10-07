@@ -74,6 +74,19 @@ func callTool(t *testing.T, caller truenas.Caller, readOnly bool, toolName strin
 func listTools(t *testing.T, caller truenas.Caller, readOnly bool) []string {
 	t.Helper()
 
+	tools := listToolDefs(t, caller, readOnly)
+	names := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		names = append(names, tool.Name)
+	}
+	return names
+}
+
+// listToolDefs creates a server with the given caller, connects an in-memory
+// client, and returns the registered tools as a client sees them over the wire.
+func listToolDefs(t *testing.T, caller truenas.Caller, readOnly bool) []*mcp.Tool {
+	t.Helper()
+
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
@@ -97,12 +110,7 @@ func listTools(t *testing.T, caller truenas.Caller, readOnly bool) []string {
 	if err != nil {
 		t.Fatalf("list tools: %v", err)
 	}
-
-	names := make([]string, 0, len(res.Tools))
-	for _, tool := range res.Tools {
-		names = append(names, tool.Name)
-	}
-	return names
+	return res.Tools
 }
 
 // resultText extracts the text string from the first TextContent in a CallToolResult.

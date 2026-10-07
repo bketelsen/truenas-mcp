@@ -13,6 +13,11 @@ func registerPoolTools(s *mcp.Server, client truenas.Caller) {
 		Name:        "truenas_pool_list",
 		Description: "List all ZFS pools with name, status, size, and health.",
 		InputSchema: noArgs(),
+		Annotations: &mcp.ToolAnnotations{
+			Title:         "List Pools",
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		result, err := client.Call("pool.query")
 		if err != nil {
@@ -27,6 +32,11 @@ func registerPoolTools(s *mcp.Server, client truenas.Caller) {
 		InputSchema: schema(map[string]any{
 			"name": stringProp("name of the pool to inspect"),
 		}, "name"),
+		Annotations: &mcp.ToolAnnotations{
+			Title:         "Get Pool",
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		name, err := requireString(req, "name")
 		if err != nil {
