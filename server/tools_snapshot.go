@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,11 +30,11 @@ func registerSnapshotReadTools(s *mcp.Server, client truenas.Caller) {
 		if err != nil {
 			return nil, err
 		}
-		result, err := callSnapshot(client, "query", [][]any{{"dataset", "=", dataset}})
+		result, err := callSnapshot(client, "query", [][]any{{"dataset", "=", dataset}}, snapshotQueryOptions())
 		if err != nil {
 			return nil, fmt.Errorf("snapshot.query: %w", err)
 		}
-		return jsonResult(result)
+		return jsonResult(sortSnapshotsNewestFirst(result))
 	})
 
 	s.AddTool(&mcp.Tool{
@@ -51,7 +53,7 @@ func registerSnapshotReadTools(s *mcp.Server, client truenas.Caller) {
 		if err != nil {
 			return nil, err
 		}
-		result, err := callSnapshot(client, "query", [][]any{{"id", "=", name}})
+		result, err := callSnapshot(client, "query", [][]any{{"id", "=", name}}, snapshotQueryOptions())
 		if err != nil {
 			return nil, fmt.Errorf("snapshot.query: %w", err)
 		}
@@ -119,6 +121,61 @@ func registerSnapshotWriteTools(s *mcp.Server, client truenas.Caller) {
 		}
 		return jsonResult(result)
 	})
+}
+
+// snapshotProperties are the ZFS properties requested on snapshot queries.
+// TrueNAS 27.0 returns an empty properties object unless asked for them.
+var snapshotProperties = []string{"creation", "used", "referenced"}
+
+func snapshotQueryOptions() map[string]any {
+	return map[string]any{"extra": map[string]any{"properties": snapshotProperties}}
+}
+
+// snapshotCreation extracts the creation time (unix seconds) from a snapshot entry.
+func snapshotCreation(item map[string]any) (int64, bool) {
+	props, _ := item["properties"].(map[string]any)
+	c, _ := props["creation"].(map[string]any)
+	switch v := c["parsed"].(type) {
+	case float64:
+		return int64(v), true
+	case map[string]any: // {"$date": millis}
+		if ms, ok := v["$date"].(float64); ok {
+			return int64(ms) / 1000, true
+		}
+	}
+	if str, ok := c["rawvalue"].(string); ok {
+		if n, err := strconv.ParseInt(str, 10, 64); err == nil {
+			return n, true
+		}
+	}
+	if str, ok := c["value"].(string); ok {
+		if n, err := strconv.ParseInt(str, 10, 64); err == nil {
+			return n, true
+		}
+	}
+	return 0, false
+}
+
+// sortSnapshotsNewestFirst orders a snapshot list by creation time, newest first.
+// Entries without a creation time sort last. Non-list input is returned unchanged.
+func sortSnapshotsNewestFirst(raw json.RawMessage) json.RawMessage {
+	var items []map[string]any
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return raw
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		a, aok := snapshotCreation(items[i])
+		b, bok := snapshotCreation(items[j])
+		if aok != bok {
+			return aok
+		}
+		return a > b
+	})
+	out, err := json.Marshal(items)
+	if err != nil {
+		return raw
+	}
+	return out
 }
 
 // callSnapshot calls a snapshot method by operation (query, create, delete).

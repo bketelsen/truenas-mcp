@@ -77,7 +77,7 @@ func registerSystemTools(s *mcp.Server, client truenas.Caller) {
 			OpenWorldHint: new(false),
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		result, err := client.Call("disk.query")
+		result, err := client.Call("disk.query", []any{}, map[string]any{"extra": map[string]any{"pools": true}})
 		if err != nil {
 			return nil, fmt.Errorf("disk.query: %w", err)
 		}

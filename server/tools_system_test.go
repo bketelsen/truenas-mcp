@@ -43,6 +43,15 @@ func TestDiskList_Success(t *testing.T) {
 			if method != "disk.query" {
 				t.Errorf("method = %q, want disk.query", method)
 			}
+			// 27.0 only joins the pool name when extra.pools is requested.
+			if len(params) != 2 {
+				t.Fatalf("params = %v, want filters and options", params)
+			}
+			opts, _ := params[1].(map[string]any)
+			extra, _ := opts["extra"].(map[string]any)
+			if extra["pools"] != true {
+				t.Errorf("options = %v, want extra.pools=true", opts)
+			}
 			return json.RawMessage(`[{"name":"sda","size":1000000}]`), nil
 		},
 	}
