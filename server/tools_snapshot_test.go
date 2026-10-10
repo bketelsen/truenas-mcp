@@ -23,6 +23,7 @@ func TestSnapshotList_Success(t *testing.T) {
 			if filter[0][0] != "dataset" || filter[0][2] != "tank/data" {
 				t.Errorf("filter = %v, want [[dataset = tank/data]]", filter)
 			}
+			checkSnapshotOptions(t, params)
 			return json.RawMessage(`[{"id":"tank/data@snap1"}]`), nil
 		},
 	}
@@ -59,6 +60,7 @@ func TestSnapshotGet_Success(t *testing.T) {
 			if filter[0][0] != "id" || filter[0][2] != "tank/data@snap1" {
 				t.Errorf("filter = %v, want [[id = tank/data@snap1]]", filter)
 			}
+			checkSnapshotOptions(t, params)
 			return json.RawMessage(`{"id":"tank/data@snap1"}`), nil
 		},
 	}
@@ -230,5 +232,52 @@ func TestSnapshot_NoFallbackOnOtherErrors(t *testing.T) {
 	}
 	if len(calls) != 1 || calls[0] != "pool.snapshot.delete" {
 		t.Errorf("calls = %v, want only pool.snapshot.delete", calls)
+	}
+}
+
+func checkSnapshotOptions(t *testing.T, params []interface{}) {
+	t.Helper()
+	if len(params) != 2 {
+		t.Fatalf("params = %v, want filters and options", params)
+	}
+	opts, _ := params[1].(map[string]any)
+	extra, _ := opts["extra"].(map[string]any)
+	props, _ := extra["properties"].([]string)
+	want := map[string]bool{"creation": true, "used": true, "referenced": true}
+	for _, p := range props {
+		delete(want, p)
+	}
+	if len(want) != 0 {
+		t.Errorf("extra.properties = %v, missing %v", props, want)
+	}
+}
+
+func TestSnapshotList_SortedNewestFirst(t *testing.T) {
+	mock := &mockCaller{
+		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+			return json.RawMessage(`[
+				{"id":"old","properties":{"creation":{"parsed":{"$date":1000000},"rawvalue":"1000"}}},
+				{"id":"none","properties":{}},
+				{"id":"new","properties":{"creation":{"parsed":{"$date":3000000},"rawvalue":"3000"}}},
+				{"id":"raw","properties":{"creation":{"rawvalue":"2000"}}}
+			]`), nil
+		},
+	}
+	result, err := callTool(t, mock, false, "truenas_snapshot_list", map[string]any{"dataset": "tank/data"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var items []struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(resultText(t, result)), &items); err != nil {
+		t.Fatal(err)
+	}
+	got := ""
+	for _, it := range items {
+		got += it.ID + " "
+	}
+	if got != "new raw old none " {
+		t.Errorf("order = %q, want \"new raw old none \"", got)
 	}
 }
