@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -26,9 +28,9 @@ func registerSnapshotReadTools(s *mcp.Server, client truenas.Caller) {
 		if err != nil {
 			return nil, err
 		}
-		result, err := client.Call("zfs.snapshot.query", [][]any{{"dataset", "=", dataset}})
+		result, err := callSnapshot(client, "query", [][]any{{"dataset", "=", dataset}})
 		if err != nil {
-			return nil, fmt.Errorf("zfs.snapshot.query: %w", err)
+			return nil, fmt.Errorf("snapshot.query: %w", err)
 		}
 		return jsonResult(result)
 	})
@@ -49,9 +51,9 @@ func registerSnapshotReadTools(s *mcp.Server, client truenas.Caller) {
 		if err != nil {
 			return nil, err
 		}
-		result, err := client.Call("zfs.snapshot.query", [][]any{{"id", "=", name}})
+		result, err := callSnapshot(client, "query", [][]any{{"id", "=", name}})
 		if err != nil {
-			return nil, fmt.Errorf("zfs.snapshot.query: %w", err)
+			return nil, fmt.Errorf("snapshot.query: %w", err)
 		}
 		return jsonResult(result)
 	})
@@ -86,9 +88,9 @@ func registerSnapshotWriteTools(s *mcp.Server, client truenas.Caller) {
 			"dataset": dataset,
 			"name":    snapName,
 		}
-		result, err := client.Call("zfs.snapshot.create", params)
+		result, err := callSnapshot(client, "create", params)
 		if err != nil {
-			return nil, fmt.Errorf("zfs.snapshot.create: %w", err)
+			return nil, fmt.Errorf("snapshot.create: %w", err)
 		}
 		return jsonResult(result)
 	})
@@ -111,10 +113,27 @@ func registerSnapshotWriteTools(s *mcp.Server, client truenas.Caller) {
 		if err != nil {
 			return nil, err
 		}
-		result, err := client.Call("zfs.snapshot.delete", name)
+		result, err := callSnapshot(client, "delete", name)
 		if err != nil {
-			return nil, fmt.Errorf("zfs.snapshot.delete: %w", err)
+			return nil, fmt.Errorf("snapshot.delete: %w", err)
 		}
 		return jsonResult(result)
 	})
+}
+
+// callSnapshot calls a snapshot method by operation (query, create, delete).
+// TrueNAS 27.0 removed zfs.snapshot.*; pool.snapshot.* (present since 25.10)
+// replaces it. Try the new name first and fall back to the legacy name only
+// when the server says the method does not exist, so older releases still work.
+// A failed lookup never ran the operation, so the fallback cannot duplicate a write.
+func callSnapshot(client truenas.Caller, op string, params ...interface{}) (json.RawMessage, error) {
+	result, err := client.Call("pool.snapshot."+op, params...)
+	if err == nil || !isMethodMissing(err) {
+		return result, err
+	}
+	return client.Call("zfs.snapshot."+op, params...)
+}
+
+func isMethodMissing(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "method does not exist")
 }

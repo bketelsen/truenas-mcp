@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"regexp"
 	"testing"
 )
@@ -9,8 +10,8 @@ import (
 func TestSnapshotList_Success(t *testing.T) {
 	mock := &mockCaller{
 		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
-			if method != "zfs.snapshot.query" {
-				t.Errorf("method = %q, want zfs.snapshot.query", method)
+			if method != "pool.snapshot.query" {
+				t.Errorf("method = %q, want pool.snapshot.query", method)
 			}
 			if len(params) == 0 {
 				t.Fatal("expected filter params")
@@ -87,8 +88,8 @@ func TestSnapshotGet_MissingName(t *testing.T) {
 func TestSnapshotCreate_WithName(t *testing.T) {
 	mock := &mockCaller{
 		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
-			if method != "zfs.snapshot.create" {
-				t.Errorf("method = %q, want zfs.snapshot.create", method)
+			if method != "pool.snapshot.create" {
+				t.Errorf("method = %q, want pool.snapshot.create", method)
 			}
 			p := params[0].(map[string]any)
 			if p["dataset"] != "tank/data" {
@@ -150,8 +151,8 @@ func TestSnapshotCreate_MissingDataset(t *testing.T) {
 func TestSnapshotDelete_Success(t *testing.T) {
 	mock := &mockCaller{
 		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
-			if method != "zfs.snapshot.delete" {
-				t.Errorf("method = %q, want zfs.snapshot.delete", method)
+			if method != "pool.snapshot.delete" {
+				t.Errorf("method = %q, want pool.snapshot.delete", method)
 			}
 			if len(params) == 0 || params[0] != "tank/data@snap1" {
 				t.Errorf("params = %v, want [tank/data@snap1]", params)
@@ -179,5 +180,55 @@ func TestSnapshotDelete_MissingName(t *testing.T) {
 	result, err := callTool(t, mock, false, "truenas_snapshot_delete", nil)
 	if err == nil && (result == nil || !result.IsError) {
 		t.Error("expected error for missing name")
+	}
+}
+
+func TestSnapshot_FallsBackToLegacyMethods(t *testing.T) {
+	cases := []struct {
+		tool string
+		args map[string]any
+		op   string
+	}{
+		{"truenas_snapshot_list", map[string]any{"dataset": "tank/data"}, "query"},
+		{"truenas_snapshot_get", map[string]any{"name": "tank/data@s"}, "query"},
+		{"truenas_snapshot_create", map[string]any{"dataset": "tank/data", "name": "s"}, "create"},
+		{"truenas_snapshot_delete", map[string]any{"name": "tank/data@s"}, "delete"},
+	}
+	for _, c := range cases {
+		t.Run(c.tool, func(t *testing.T) {
+			var calls []string
+			mock := &mockCaller{
+				CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+					calls = append(calls, method)
+					if method == "pool.snapshot."+c.op {
+						return nil, errors.New("calling " + method + ": Method does not exist")
+					}
+					return json.RawMessage(`true`), nil
+				},
+			}
+			if _, err := callTool(t, mock, false, c.tool, c.args); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			want := []string{"pool.snapshot." + c.op, "zfs.snapshot." + c.op}
+			if len(calls) != 2 || calls[0] != want[0] || calls[1] != want[1] {
+				t.Errorf("calls = %v, want %v", calls, want)
+			}
+		})
+	}
+}
+
+func TestSnapshot_NoFallbackOnOtherErrors(t *testing.T) {
+	var calls []string
+	mock := &mockCaller{
+		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+			calls = append(calls, method)
+			return nil, errors.New("permission denied")
+		},
+	}
+	if _, err := callTool(t, mock, false, "truenas_snapshot_delete", map[string]any{"name": "tank/data@s"}); err == nil {
+		t.Fatal("expected error")
+	}
+	if len(calls) != 1 || calls[0] != "pool.snapshot.delete" {
+		t.Errorf("calls = %v, want only pool.snapshot.delete", calls)
 	}
 }
