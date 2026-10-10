@@ -73,26 +73,26 @@ Delete a ZFS dataset. Destructive and irreversible.
 List snapshots for a dataset with name, creation time, and referenced size.
 - Parameters:
   - `dataset` (string, required) — dataset path
-- API: `zfs.snapshot.query` with filter `[["dataset", "=", dataset]]`
+- API: `pool.snapshot.query` with filter `[["dataset", "=", dataset]]`
 
 ### `truenas_snapshot_get`
 Get full details for a specific snapshot.
 - Parameters:
   - `name` (string, required) — full snapshot name (e.g., `tank/data@snap1`)
-- API: `zfs.snapshot.query` with filter `[["id", "=", name]]`
+- API: `pool.snapshot.query` with filter `[["id", "=", name]]`
 
 ### `truenas_snapshot_create` **[write]**
 Create a ZFS snapshot. Auto-generates a timestamp name (`auto-YYYYMMDD-HHMMSS`) if name is omitted.
 - Parameters:
   - `dataset` (string, required) — dataset path
   - `name` (string, optional) — snapshot name
-- API: `zfs.snapshot.create`
+- API: `pool.snapshot.create`
 
 ### `truenas_snapshot_delete` **[write]**
 Delete a ZFS snapshot. Destructive.
 - Parameters:
   - `name` (string, required) — full snapshot name (e.g., `tank/data@snap1`)
-- API: `zfs.snapshot.delete`
+- API: `pool.snapshot.delete`
 
 ## Share Tools (`tools_share.go`)
 
