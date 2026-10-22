@@ -114,8 +114,8 @@ func TestDatasetCreate_AllParams(t *testing.T) {
 			if p["comments"] != "test dataset" {
 				t.Errorf("comments = %v, want 'test dataset'", p["comments"])
 			}
-			if p["compression"] != "lz4" {
-				t.Errorf("compression = %v, want lz4", p["compression"])
+			if p["compression"] != "LZ4" {
+				t.Errorf("compression = %v, want LZ4", p["compression"])
 			}
 			return json.RawMessage(`{"id":"tank/newdata"}`), nil
 		},

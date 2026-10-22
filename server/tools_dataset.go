@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"truenas-mcp/truenas"
@@ -64,7 +65,7 @@ func registerDatasetWriteTools(s *mcp.Server, client truenas.Caller) {
 		InputSchema: schema(map[string]any{
 			"name":        stringProp("full dataset path to create (e.g. tank/newdata)"),
 			"comments":    stringProp("optional description"),
-			"compression": stringProp("compression algorithm (e.g. lz4, zstd, off)"),
+			"compression": stringProp("compression algorithm (e.g. LZ4, ZSTD, OFF; case-insensitive)"),
 		}, "name"),
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Create Dataset",
@@ -83,7 +84,8 @@ func registerDatasetWriteTools(s *mcp.Server, client truenas.Caller) {
 			params["comments"] = comments
 		}
 		if compression := optionalString(req, "compression"); compression != "" {
-			params["compression"] = compression
+			// compression is an upper-case enum on every release.
+			params["compression"] = strings.ToUpper(compression)
 		}
 		result, err := client.Call("pool.dataset.create", params)
 		if err != nil {

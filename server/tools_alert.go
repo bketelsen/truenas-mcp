@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"truenas-mcp/truenas"
@@ -21,17 +23,37 @@ func registerAlertReadTools(s *mcp.Server, client truenas.Caller) {
 			OpenWorldHint: new(false),
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		params := []any{}
-		if level := optionalString(req, "level"); level != "" {
-			params = append(params, [][]any{{"level", "=", level}})
-		}
-		result, err := client.Call("alert.list", params...)
+		result, err := client.Call("alert.list")
 		if err != nil {
 			return nil, fmt.Errorf("alert.list: %w", err)
+		}
+		if level := optionalString(req, "level"); level != "" {
+			return jsonResult(filterAlertsByLevel(result, level))
 		}
 		return jsonResult(result)
 	})
 
+}
+
+// filterAlertsByLevel keeps the alerts whose level equals level, ignoring case.
+// alert.list accepts no arguments on TrueNAS 27.0 (a query filter is rejected),
+// so the tool filters the result instead. Non-list input is returned unchanged.
+func filterAlertsByLevel(raw json.RawMessage, level string) json.RawMessage {
+	var items []map[string]any
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return raw
+	}
+	kept := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		if lv, ok := item["level"].(string); ok && strings.EqualFold(lv, level) {
+			kept = append(kept, item)
+		}
+	}
+	out, err := json.Marshal(kept)
+	if err != nil {
+		return raw
+	}
+	return out
 }
 
 func registerAlertWriteTools(s *mcp.Server, client truenas.Caller) {

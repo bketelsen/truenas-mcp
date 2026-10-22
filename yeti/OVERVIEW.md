@@ -214,6 +214,8 @@ Generated directories `build/`, `dist/`, `completions/`, `manpages/` are gitigno
 
 See [tools.md](tools.md) for the complete tool catalog with parameters.
 
+See [api-audit.md](api-audit.md) for the audit of every middleware method against TrueNAS 27.0, with the method table and the fallbacks.
+
 ## Build & Run
 
 ```bash
