@@ -2,6 +2,8 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 )
 
@@ -44,8 +46,10 @@ func TestNFSList_Success(t *testing.T) {
 }
 
 func TestSMBCreate_AllParams(t *testing.T) {
+	calls := 0
 	mock := &mockCaller{
 		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+			calls++
 			if method != "sharing.smb.create" {
 				t.Errorf("method = %q, want sharing.smb.create", method)
 			}
@@ -59,8 +63,15 @@ func TestSMBCreate_AllParams(t *testing.T) {
 			if p["comment"] != "test share" {
 				t.Errorf("comment = %v, want 'test share'", p["comment"])
 			}
-			if p["guestok"] != true {
-				t.Errorf("guestok = %v, want true", p["guestok"])
+			if p["purpose"] != "LEGACY_SHARE" {
+				t.Errorf("purpose = %v, want LEGACY_SHARE", p["purpose"])
+			}
+			opts, _ := p["options"].(map[string]any)
+			if opts["guestok"] != true {
+				t.Errorf("options.guestok = %v, want true", opts["guestok"])
+			}
+			if _, ok := p["guestok"]; ok {
+				t.Error("unexpected top-level guestok key")
 			}
 			return json.RawMessage(`{"id":1,"name":"myshare"}`), nil
 		},
@@ -78,11 +89,139 @@ func TestSMBCreate_AllParams(t *testing.T) {
 	if text == "" {
 		t.Error("result text is empty")
 	}
+	if calls != 1 {
+		t.Errorf("calls = %d, want 1", calls)
+	}
+}
+
+func TestSMBCreate_GuestFallsBackToLegacyGuestOK(t *testing.T) {
+	// TrueNAS before 25.10 has no purpose or options and rejects them in
+	// validation, before the create runs.
+	const errText = `TrueNAS API error from sharing.smb.create: {"code": -32602, "message": "Invalid params", "data": {"errname": "EINVAL", "reason": "[EINVAL] sharing_smb_create.options: Extra inputs are not permitted"}}`
+	var calls []map[string]any
+	mock := &mockCaller{
+		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+			p := params[0].(map[string]any)
+			calls = append(calls, p)
+			if len(calls) == 1 {
+				return nil, errors.New(errText)
+			}
+			return json.RawMessage(`{"id":1}`), nil
+		},
+	}
+	result, err := callTool(t, mock, false, "truenas_smb_create", map[string]any{
+		"name":     "myshare",
+		"path":     "/mnt/tank/data",
+		"comment":  "test share",
+		"guest_ok": true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if text := resultText(t, result); text == "" {
+		t.Error("result text is empty")
+	}
+	if len(calls) != 2 {
+		t.Fatalf("calls = %d, want 2", len(calls))
+	}
+	if calls[0]["purpose"] != "LEGACY_SHARE" {
+		t.Errorf("first call purpose = %v, want LEGACY_SHARE", calls[0]["purpose"])
+	}
+	if _, ok := calls[1]["purpose"]; ok {
+		t.Error("second call has a purpose key")
+	}
+	if _, ok := calls[1]["options"]; ok {
+		t.Error("second call has an options key")
+	}
+	if calls[1]["guestok"] != true {
+		t.Errorf("second call guestok = %v, want true", calls[1]["guestok"])
+	}
+	if calls[1]["comment"] != "test share" {
+		t.Errorf("second call comment = %v, want 'test share'", calls[1]["comment"])
+	}
+}
+
+func TestSMBCreate_GuestNoFallbackOnOtherErrors(t *testing.T) {
+	calls := 0
+	mock := &mockCaller{
+		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+			calls++
+			return nil, errors.New("connection reset")
+		},
+	}
+	if _, err := callTool(t, mock, false, "truenas_smb_create", map[string]any{
+		"name":     "myshare",
+		"path":     "/mnt/tank/data",
+		"guest_ok": true,
+	}); err == nil {
+		t.Fatal("expected error")
+	}
+	if calls != 1 {
+		t.Errorf("calls = %d, want 1", calls)
+	}
+}
+
+func TestSMBCreate_GuestNoFallbackOnUnrelatedValidationError(t *testing.T) {
+	// A traceback in the envelope can name purpose and options in source lines;
+	// only the validation reason decides whether to retry.
+	const errText = `TrueNAS API error from sharing.smb.create: {"code": -32602, "message": "Invalid params", "data": {"errname": "EINVAL", "reason": "[EINVAL] sharing_smb_create.path: Path does not exist", "trace": "File sharing.py, in validate: if data['purpose'] is None: options = data['options']"}}`
+	calls := 0
+	mock := &mockCaller{
+		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+			calls++
+			return nil, errors.New(errText)
+		},
+	}
+	_, err := callTool(t, mock, false, "truenas_smb_create", map[string]any{
+		"name":     "myshare",
+		"path":     "/mnt/tank/missing",
+		"guest_ok": true,
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "Path does not exist") {
+		t.Errorf("error = %v, want the path validation error", err)
+	}
+	if calls != 1 {
+		t.Errorf("calls = %d, want 1", calls)
+	}
+}
+
+func TestSMBCreate_GuestFallbackErrorKeepsBothMessages(t *testing.T) {
+	var calls []map[string]any
+	mock := &mockCaller{
+		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+			calls = append(calls, params[0].(map[string]any))
+			if len(calls) == 1 {
+				return nil, errors.New("[EINVAL] sharing_smb_create.options: Extra inputs are not permitted")
+			}
+			return nil, errors.New("permission denied")
+		},
+	}
+	_, err := callTool(t, mock, false, "truenas_smb_create", map[string]any{
+		"name":     "myshare",
+		"path":     "/mnt/tank/data",
+		"guest_ok": true,
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if len(calls) != 2 {
+		t.Fatalf("calls = %d, want 2", len(calls))
+	}
+	for _, want := range []string{"permission denied", "sharing_smb_create.options"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %v, want it to contain %q", err, want)
+		}
+	}
 }
 
 func TestSMBCreate_RequiredOnly(t *testing.T) {
+	calls := 0
 	mock := &mockCaller{
 		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+			calls++
 			p := params[0].(map[string]any)
 			if p["name"] != "myshare" {
 				t.Errorf("name = %v, want myshare", p["name"])
@@ -96,6 +235,12 @@ func TestSMBCreate_RequiredOnly(t *testing.T) {
 			if _, ok := p["guestok"]; ok {
 				t.Error("unexpected guestok key")
 			}
+			if _, ok := p["purpose"]; ok {
+				t.Error("unexpected purpose key")
+			}
+			if _, ok := p["options"]; ok {
+				t.Error("unexpected options key")
+			}
 			return json.RawMessage(`{"id":1}`), nil
 		},
 	}
@@ -105,6 +250,9 @@ func TestSMBCreate_RequiredOnly(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("calls = %d, want 1", calls)
 	}
 }
 

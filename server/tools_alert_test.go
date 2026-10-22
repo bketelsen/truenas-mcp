@@ -14,42 +14,70 @@ func TestAlertList_NoFilter(t *testing.T) {
 			if len(params) != 0 {
 				t.Errorf("expected no params, got %d", len(params))
 			}
-			return json.RawMessage(`[{"id":"abc","level":"INFO"}]`), nil
+			return json.RawMessage(`[{"id":"abc","level":"INFO"},{"id":"def","level":"CRITICAL"}]`), nil
 		},
 	}
 	result, err := callTool(t, mock, false, "truenas_alert_list", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	text := resultText(t, result)
-	if text == "" {
-		t.Error("result text is empty")
+	var items []struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(resultText(t, result)), &items); err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].ID != "abc" || items[1].ID != "def" {
+		t.Errorf("items = %v, want both alerts unchanged", items)
 	}
 }
 
-func TestAlertList_WithLevel(t *testing.T) {
+func TestAlertList_LevelFilter(t *testing.T) {
 	mock := &mockCaller{
 		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
-			if len(params) == 0 {
-				t.Fatal("expected filter params")
+			if method != "alert.list" {
+				t.Errorf("method = %q, want alert.list", method)
 			}
-			filter, ok := params[0].([][]any)
-			if !ok {
-				t.Fatalf("params[0] is %T, want [][]any", params[0])
+			// alert.list takes no arguments; the tool filters the result.
+			if len(params) != 0 {
+				t.Errorf("expected no params, got %d", len(params))
 			}
-			if filter[0][0] != "level" || filter[0][2] != "CRITICAL" {
-				t.Errorf("filter = %v, want [[level = CRITICAL]]", filter)
-			}
-			return json.RawMessage(`[{"id":"abc","level":"CRITICAL"}]`), nil
+			return json.RawMessage(`[
+				{"id":"a","level":"INFO"},
+				{"id":"b","level":"CRITICAL"},
+				{"id":"c","level":"critical"},
+				{"id":"d","level":"WARNING"}
+			]`), nil
+		},
+	}
+	result, err := callTool(t, mock, false, "truenas_alert_list", map[string]any{"level": "critical"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var items []struct {
+		ID    string `json:"id"`
+		Level string `json:"level"`
+	}
+	if err := json.Unmarshal([]byte(resultText(t, result)), &items); err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].ID != "b" || items[1].ID != "c" {
+		t.Errorf("items = %v, want only the two critical alerts", items)
+	}
+}
+
+func TestAlertList_LevelFilterNoMatch(t *testing.T) {
+	mock := &mockCaller{
+		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+			return json.RawMessage(`[{"id":"a","level":"INFO"}]`), nil
 		},
 	}
 	result, err := callTool(t, mock, false, "truenas_alert_list", map[string]any{"level": "CRITICAL"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	text := resultText(t, result)
-	if text == "" {
-		t.Error("result text is empty")
+	if text := resultText(t, result); text != "[]" {
+		t.Errorf("result = %q, want []", text)
 	}
 }
 

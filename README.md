@@ -150,6 +150,8 @@ Tools marked with `*` are excluded by default and are registered only with `--en
 | `truenas_app_configure` | Change an app's configuration values (deep-merged, redeploys the app) `*` |
 | `truenas_jobs_list` | Recent TrueNAS jobs, optionally filtered by state or method |
 
+Every middleware method these tools call was audited against TrueNAS 27.0 on 2026-10-22. See [yeti/api-audit.md](yeti/api-audit.md) for the method table and for the fallbacks that keep older releases working.
+
 ## Tool Annotations
 
 Every tool carries [MCP tool annotations](https://modelcontextprotocol.io/specification/2025-06-18/schema#toolannotations): a `title` plus `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint`. Clients can use them to decide how much confirmation a call needs. `openWorldHint` is `false` on every tool, because the server only talks to the one appliance it is configured for.

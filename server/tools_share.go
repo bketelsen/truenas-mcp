@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"truenas-mcp/truenas"
@@ -53,7 +54,7 @@ func registerShareWriteTools(s *mcp.Server, client truenas.Caller) {
 			"name":     stringProp("share name"),
 			"path":     stringProp("filesystem path to share (e.g. /mnt/tank/data)"),
 			"comment":  stringProp("optional description"),
-			"guest_ok": boolProp("allow guest access (default false)"),
+			"guest_ok": boolProp("allow guest access (default false); on TrueNAS 25.10 and later this creates a LEGACY_SHARE share, the only purpose that allows guests"),
 		}, "name", "path"),
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Create SMB Share",
@@ -76,7 +77,7 @@ func registerShareWriteTools(s *mcp.Server, client truenas.Caller) {
 			params["comment"] = comment
 		}
 		if optionalBool(req, "guest_ok") {
-			params["guestok"] = true
+			return smbCreateWithGuest(client, params)
 		}
 		result, err := client.Call("sharing.smb.create", params)
 		if err != nil {
@@ -168,4 +169,50 @@ func registerShareWriteTools(s *mcp.Server, client truenas.Caller) {
 		}
 		return jsonResult(result)
 	})
+}
+
+// smbCreateWithGuest creates an SMB share that allows guest access. Since
+// TrueNAS 25.10 the share schema has purpose plus a per-purpose options object,
+// and guestok exists only inside options for purpose LEGACY_SHARE. Releases
+// before 25.10 know neither field and reject them in validation, so try the
+// 25.10+ payload first and fall back to the legacy top-level guestok only on a
+// validation error. A validation error means the create never ran, so the retry
+// cannot create a duplicate share. This follows the same rule as callSnapshot.
+func smbCreateWithGuest(client truenas.Caller, base map[string]any) (*mcp.CallToolResult, error) {
+	params := map[string]any{"purpose": "LEGACY_SHARE", "options": map[string]any{"guestok": true}}
+	for k, v := range base {
+		params[k] = v
+	}
+	result, err := client.Call("sharing.smb.create", params)
+	if err == nil {
+		return jsonResult(result)
+	}
+	if !isSMBShapeRejected(err) {
+		return nil, fmt.Errorf("sharing.smb.create: %w", err)
+	}
+	firstErr := err
+	legacy := map[string]any{"guestok": true}
+	for k, v := range base {
+		legacy[k] = v
+	}
+	result, err = client.Call("sharing.smb.create", legacy)
+	if err != nil {
+		return nil, fmt.Errorf("sharing.smb.create: %w (the LEGACY_SHARE payload was rejected first: %v)", err, firstErr)
+	}
+	return jsonResult(result)
+}
+
+// isSMBShapeRejected reports whether err is a validation error about the shape
+// of the payload, as a release before 25.10 returns for the purpose or options
+// fields it does not know. It matches only the field names in the validation
+// reason (`sharing_smb_create.purpose`, `sharing_smb_create.options`), not any
+// mention of them in the rest of the envelope, because a Python traceback in
+// that envelope can name those words in source lines.
+func isSMBShapeRejected(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "einval") &&
+		(strings.Contains(msg, "sharing_smb_create.purpose") || strings.Contains(msg, "sharing_smb_create.options"))
 }

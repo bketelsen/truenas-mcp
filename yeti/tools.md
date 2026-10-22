@@ -58,8 +58,9 @@ Create a new ZFS dataset.
 - Parameters:
   - `name` (string, required) — full dataset path (e.g., `tank/newdata`)
   - `comments` (string, optional) — description
-  - `compression` (string, optional) — algorithm (lz4, zstd, off)
+  - `compression` (string, optional) — algorithm (e.g. `LZ4`, `ZSTD`, `OFF`; case-insensitive). The tool upper-cases the value before sending it, because `compression` is an upper-case enum on every release.
 - API: `pool.dataset.create`
+- See [api-audit.md](api-audit.md) (Gap 3).
 
 ### `truenas_dataset_delete` **[write]**
 Delete a ZFS dataset. Destructive and irreversible.
@@ -107,8 +108,15 @@ Create an SMB share.
   - `name` (string, required) — share name
   - `path` (string, required) — filesystem path (e.g., `/mnt/tank/data`)
   - `comment` (string, optional) — description
-  - `guest_ok` (boolean, optional) — allow guest access (default false)
-- API: `sharing.smb.create`
+  - `guest_ok` (boolean, optional) — allow guest access (default false); on TrueNAS 25.10 and later this creates a `LEGACY_SHARE` share, the only purpose that allows guests
+- API: `sharing.smb.create` with `name`, `path`, and optional `comment`. Without `guest_ok` this payload is sent unchanged.
+  With `guest_ok` the tool adds `purpose: "LEGACY_SHARE"` and `options: {"guestok": true}`. If the server
+  rejects that payload in validation (`EINVAL` naming `sharing_smb_create.purpose` or
+  `sharing_smb_create.options`, as releases before 25.10 do), the tool retries once with the legacy
+  top-level `guestok: true` and no `purpose` or `options`. A validation error
+  means the create never ran, so the retry cannot create a duplicate share. If the retry also fails,
+  the error keeps both messages.
+- See [api-audit.md](api-audit.md) (Gap 2).
 
 ### `truenas_smb_delete` **[write]**
 Delete an SMB share.
@@ -141,7 +149,9 @@ Delete an NFS export.
 List active alerts with level, message, datetime, and dismissed status.
 - Parameters:
   - `level` (string, optional) — filter: `INFO`, `WARNING`, `CRITICAL`, or empty for all
-- API: `alert.list`
+- API: `alert.list` with no parameters. `alert.list` takes no arguments on TrueNAS 27.0 (a query filter is
+  rejected with `EINVAL`), so with `level` set the tool filters the returned array itself, ignoring case.
+- See [api-audit.md](api-audit.md) (Gap 1).
 
 ### `truenas_alert_dismiss` **[write]**
 Dismiss an alert.
