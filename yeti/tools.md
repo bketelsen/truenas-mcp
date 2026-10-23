@@ -2,7 +2,7 @@
 
 Complete catalog of MCP tools exposed by truenas-mcp. Tools marked with **[write]** are excluded by default and are registered only with `--enable-writes` or `TRUENAS_ENABLE_WRITES=true`.
 
-Every tool carries MCP annotations (`Title`, `ReadOnlyHint`, `DestructiveHint`, `IdempotentHint`, `OpenWorldHint: false`) defined next to its `mcp.Tool` literal; `wantToolHints` in `server/annotations_test.go` is the authoritative classification table. All non-**[write]** tools are `readOnlyHint: true`. Destructive writes (`destructiveHint: true`): `truenas_dataset_delete`, `truenas_snapshot_delete`, `truenas_smb_delete`, `truenas_nfs_delete`, `truenas_app_configure`, `truenas_app_update`, `truenas_app_update_all`. Every other **[write]** tool is `destructiveHint: false`.
+Every tool carries MCP annotations (`Title`, `ReadOnlyHint`, `DestructiveHint`, `IdempotentHint`, `OpenWorldHint: false`) defined next to its `mcp.Tool` literal; `wantToolHints` in `server/annotations_test.go` is the authoritative classification table. All non-**[write]** tools are `readOnlyHint: true`. Destructive writes (`destructiveHint: true`): `truenas_dataset_delete`, `truenas_snapshot_delete`, `truenas_smb_delete`, `truenas_nfs_delete`, `truenas_app_configure`, `truenas_app_delete`, `truenas_app_update`, `truenas_app_update_all`. Every other **[write]** tool is `destructiveHint: false`.
 
 ## System Tools (`tools_system.go`)
 
@@ -94,6 +94,28 @@ Delete a ZFS snapshot. Destructive.
 - Parameters:
   - `name` (string, required) — full snapshot name (e.g., `tank/data@snap1`)
 - API: `pool.snapshot.delete`
+
+## Data Protection Tools (`tools_data_protection.go`)
+
+Both tools are read-only and registered by `registerDataProtectionReadTools`. They return a summary, not the raw middleware entry: each task is built from an allow-list of fields, so nothing unlisted can leak. Field names were checked against `PeriodicSnapshotTaskEntry` and `ReplicationEntry` in the `v25_10_0` and `v27_0_0` API models of truenas/middleware (not live).
+
+Output shape for both: `{ "summary": {"total", "enabled", "failing"}, "tasks": [...] }`, tasks sorted by `id`. `failing` counts tasks whose `last_run.state` is `ERROR`. List fields are never null; `schedule` and `ssh_credentials` stay null when the middleware sends null.
+
+`last_run` is built by `lastRun` from the zettarepl `state` of the entry: `{"state", "datetime", "last_snapshot", "error"}`, absent keys omitted. `state` can be an object or a plain string in some releases; both work. A missing `state` gives `{}`. Datetimes arrive as `{"$date": <unix millis>}` and `wireDatetime` converts them to an RFC 3339 UTC string; any other form passes through unchanged and never fails the tool. For replication, `last_run.job` is `{"id", "state"}` taken from the top-level `job` (or `state.job` when that is null); the rest of the job (arguments, logs) is dropped.
+
+### `truenas_snapshot_task_list`
+List periodic snapshot tasks.
+- Parameters:
+  - `dataset` (string, optional) — only tasks for exactly this dataset
+- API: `pool.snapshottask.query`; with `dataset` the filter `[["dataset", "=", dataset]]`, otherwise no parameters
+- Task fields: `id`, `dataset`, `recursive`, `exclude`, `enabled`, `naming_schema`, `allow_empty`, `schedule` (object passed through), `retention` = `{"value": lifetime_value, "unit": lifetime_unit}` (unit is HOUR/DAY/WEEK/MONTH/YEAR), `last_run`
+
+### `truenas_replication_task_list`
+List replication tasks.
+- Parameters: none
+- API: `replication.query`, no parameters
+- Task fields: `id`, `name`, `direction` (PUSH/PULL), `transport` (SSH/SSH+NETCAT/LOCAL), `source_datasets`, `target_dataset`, `recursive`, `exclude`, `enabled`, `auto`, `schedule`, `ssh_credentials` (`{"id", "name"}` or null), `periodic_snapshot_task_ids` (ids from `periodic_snapshot_tasks`), `naming_schema`, `also_include_naming_schema`, `readonly`, `encryption` (bool only), `retention` = `{"policy": retention_policy, "value", "unit"}`, `last_run`
+- SECURITY: the entry holds `encryption_key`, `encryption_key_location`, and an `ssh_credentials` keychain credential whose `attributes` can contain a PRIVATE KEY. None of these are in the allow-list. `TestReplicationTaskList_NoSecretLeak` feeds a fixture with a private key and an encryption key and checks they are absent from the result text. When you add a field to this tool, add it to the allow-list deliberately and never copy a whole nested object.
 
 ## Share Tools (`tools_share.go`)
 
@@ -216,6 +238,19 @@ Upgrade all apps with updates available and return the job IDs.
 - Parameters: none
 - API: `app.query` with filter `[["upgrade_available", "=", true]]`, then `app.upgrade` for each app, with the same options and snapshots as `truenas_app_update`
 - Returns: `{ "summary", "jobs": [{ "name", "job_id" }], "failures": [{ "name", "error" }] }`
+
+### `truenas_app_delete` **[write]**
+Delete an installed app and return the job ID. Destructive and irreversible.
+- Parameters:
+  - `name` (string, required) — app name to delete
+  - `confirm` (string, required) — type the app name again to confirm deletion; must equal `name` exactly (case-sensitive, no trimming)
+  - `remove_ix_volumes` (boolean, optional, default false) — also destroy the app's ix-volumes dataset (TrueNAS-managed storage) recursively, with its snapshots. Host paths are never removed
+  - `dry_run` (boolean, optional, default false) — check and describe; do not delete
+- API: `app.query` with filter `[["name", "=", name]]` (existence check, also on dry runs), then `app.delete(name, options)`. This is a TrueNAS job; the result is the job ID.
+- Steps: (1) `confirm != name` is an error and makes NO middleware call; (2) no app match is the error `app "<name>" not found`; (3) options are built explicitly with all 3 keys: `{"remove_images": true, "remove_ix_volumes": <flag>, "force_remove_custom_app": false}` (`AppDelete` model; the middleware defaults are true/false/false, but the tool never relies on them); (4) with `dry_run`, `app.delete` is NOT called.
+- Returns: `{ "name", "job_id", "remove_ix_volumes" }`; with `dry_run`: `{ "dry_run": true, "name", "method": "app.delete", "options", "app": {"state", "version", "custom_app"}, "effects": [...] }`
+- Annotations: destructive, and idempotent because a second call finds no app and changes nothing (like `truenas_dataset_delete`).
+- `force_remove_custom_app` is always sent as `false`; the tool has no parameter to change it.
 
 ## Job Tools (`tools_reports.go`)
 

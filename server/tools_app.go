@@ -331,6 +331,102 @@ func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 			"failures": failures,
 		})
 	})
+
+	s.AddTool(&mcp.Tool{
+		Name: "truenas_app_delete",
+		Description: "Delete an installed app by name and return the TrueNAS job ID. This is destructive and irreversible: " +
+			"the app's containers, docker volumes, and images are removed. `confirm` must repeat the app name exactly. " +
+			"The app's ix-volumes (TrueNAS-managed storage, with their snapshots) are kept unless `remove_ix_volumes` is true. " +
+			"Host paths are never removed. Set `dry_run` to see the plan first without deleting anything. " +
+			"Poll truenas_jobs_list with the job ID for completion.",
+		InputSchema: schema(map[string]any{
+			"name":              stringProp("name of the app to delete"),
+			"confirm":           stringProp("type the app name again to confirm deletion; must equal name exactly"),
+			"remove_ix_volumes": boolProp("also destroy the app's ix-volumes dataset (TrueNAS-managed storage) recursively, with its snapshots; default false. Host paths are never removed"),
+			"dry_run":           boolProp("when true, check the app exists and describe what would be deleted without calling app.delete; default false"),
+		}, "name", "confirm"),
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Delete App",
+			ReadOnlyHint:    false,
+			DestructiveHint: new(true), // removes containers, volumes, and images; with remove_ix_volumes also the app's data
+			IdempotentHint:  true,      // a second call finds no app and changes nothing, like truenas_dataset_delete
+			OpenWorldHint:   new(false),
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		name, err := requireString(req, "name")
+		if err != nil {
+			return nil, err
+		}
+		confirm, err := requireString(req, "confirm")
+		if err != nil {
+			return nil, err
+		}
+		if confirm != name {
+			return nil, fmt.Errorf("parameter %q must equal the app name %q exactly (case-sensitive); nothing was deleted", "confirm", name)
+		}
+		removeIxVolumes := optionalBool(req, "remove_ix_volumes")
+		dryRun := optionalBool(req, "dry_run")
+
+		result, err := client.Call("app.query", [][]any{{"name", "=", name}})
+		if err != nil {
+			return nil, fmt.Errorf("app.query: %w", err)
+		}
+		var apps []map[string]any
+		if err := json.Unmarshal(result, &apps); err != nil {
+			return nil, fmt.Errorf("parsing app.query: %w", err)
+		}
+		if len(apps) == 0 {
+			return nil, fmt.Errorf("app %q not found", name)
+		}
+
+		// AppDelete options (api/v25_10_0/app.py): the middleware defaults are
+		// remove_images=true, remove_ix_volumes=false, force_remove_custom_app=false.
+		// Send all three so the call never depends on a default.
+		options := map[string]any{
+			"remove_images":           true,
+			"remove_ix_volumes":       removeIxVolumes,
+			"force_remove_custom_app": false,
+		}
+
+		if dryRun {
+			ixEffect := "the app's ix-volumes dataset and its snapshots are kept"
+			if removeIxVolumes {
+				ixEffect = "the app's ix-volumes dataset and its snapshots are destroyed"
+			}
+			return jsonValueResult(map[string]any{
+				"dry_run": true,
+				"name":    name,
+				"method":  "app.delete",
+				"options": options,
+				"app": map[string]any{
+					"state":      apps[0]["state"],
+					"version":    apps[0]["version"],
+					"custom_app": apps[0]["custom_app"],
+				},
+				"effects": []string{
+					"the app's containers are stopped and removed",
+					"the app's docker named volumes are removed",
+					"the app's container images are removed",
+					ixEffect,
+					"host-path data is not touched",
+				},
+			})
+		}
+
+		result, err = client.Call("app.delete", name, options)
+		if err != nil {
+			return nil, fmt.Errorf("app.delete: %w", err)
+		}
+		var jobID any
+		if err := json.Unmarshal(result, &jobID); err != nil {
+			return nil, fmt.Errorf("parsing app.delete: %w", err)
+		}
+		return jsonValueResult(map[string]any{
+			"name":              name,
+			"job_id":            jobID,
+			"remove_ix_volumes": removeIxVolumes,
+		})
+	})
 }
 
 func upgradeApp(client truenas.Caller, name string) (any, error) {
