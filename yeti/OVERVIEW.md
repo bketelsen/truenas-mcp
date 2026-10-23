@@ -19,10 +19,11 @@ main.go                  Entry point — uses Charm fang CLI framework
     ├── tools_pool.go     ZFS pool tools
     ├── tools_dataset.go  Dataset list/get/create/delete tools
     ├── tools_snapshot.go Snapshot list/get/create/delete tools
+    ├── tools_data_protection.go  Periodic snapshot task and replication task list tools (allow-listed summaries; no secrets)
     ├── tools_share.go    SMB and NFS share tools
     ├── tools_alert.go    Alert list/dismiss tools
     ├── tools_reports.go  Aggregated health report and job-list tools
-    ├── tools_app.go      App list/get/config/start/stop/restart/update tools + update report
+    ├── tools_app.go      App list/get/config/start/stop/restart/update/delete tools + update report
     ├── tools_app_configure.go  App configuration write tool (deep-merge over app.config, then app.update)
     └── params.go         Typed MCP parameter accessors
 ```
@@ -81,7 +82,7 @@ Each tool is defined inline with `s.AddTool(&mcp.Tool{...}, handlerFunc)`. The h
 Every tool also sets `Annotations: &mcp.ToolAnnotations{...}` (go-sdk v1.4.0 field types: `ReadOnlyHint bool`, `DestructiveHint *bool`, `IdempotentHint bool`, `OpenWorldHint *bool`, `Title string`; the pointers use Go 1.26 `new(false)` / `new(true)`). Rules, enforced by `server/annotations_test.go`:
 - `Title` is always set, and `OpenWorldHint` is always `new(false)` — the only world is the one appliance.
 - Tools registered in read-only mode set `ReadOnlyHint: true`.
-- Write tools set `ReadOnlyHint: false` and an explicit `DestructiveHint` (the MCP default when omitted is true). `true` means the call can lose data or settings or is hard to undo (deletes, `truenas_app_configure`, `truenas_app_update`, `truenas_app_update_all`); `false` means additive or recoverable.
+- Write tools set `ReadOnlyHint: false` and an explicit `DestructiveHint` (the MCP default when omitted is true). `true` means the call can lose data or settings or is hard to undo (deletes, `truenas_app_configure`, `truenas_app_delete`, `truenas_app_update`, `truenas_app_update_all`); `false` means additive or recoverable.
 - `IdempotentHint: true` only when a repeat call with the same arguments has no further effect on the appliance.
 - Non-obvious classifications carry a trailing one-line comment explaining why (e.g. app updates stay destructive even though `upgradeApp` sends `snapshot_hostpaths: true`, because `app.rollback` restores only the ix-volumes snapshot and host-path snapshots need a manual ZFS rollback; `truenas_app_start` is not idempotent because `app.start` always runs `compose up --force-recreate`).
 
@@ -102,7 +103,7 @@ That last point is why both update tools keep `DestructiveHint: true`. Host-path
 
 ### Read-Only Mode
 
-Read-only mode is the default. Unless writes are explicitly enabled with `--enable-writes` or `TRUENAS_ENABLE_WRITES=true`, mutating tools (create, delete, start, stop, restart, dismiss, update) are never registered. AI clients cannot see or invoke them.
+Read-only mode is the default. Unless writes are explicitly enabled with `--enable-writes` or `TRUENAS_ENABLE_WRITES=true`, mutating tools (create, delete, start, stop, restart, dismiss, update, app delete) are never registered. AI clients cannot see or invoke them.
 
 `TRUENAS_ENABLE_WRITES` is parsed with `envBool`, so common true values (`1`, `true`, `yes`, `on`) opt in and common false values (`0`, `false`, `no`, `off`) keep the default read-only behavior.
 

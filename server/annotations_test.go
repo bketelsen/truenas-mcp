@@ -18,24 +18,26 @@ type toolHints struct {
 // wantToolHints covers every tool the server registers with writes enabled.
 var wantToolHints = map[string]toolHints{
 	// Read-only tools: registered in both modes.
-	"truenas_health_report":      {readOnly: true},
-	"truenas_system_info":        {readOnly: true},
-	"truenas_disk_list":          {readOnly: true},
-	"truenas_network_list":       {readOnly: true},
-	"truenas_pool_list":          {readOnly: true},
-	"truenas_pool_get":           {readOnly: true},
-	"truenas_dataset_list":       {readOnly: true},
-	"truenas_dataset_get":        {readOnly: true},
-	"truenas_snapshot_list":      {readOnly: true},
-	"truenas_snapshot_get":       {readOnly: true},
-	"truenas_smb_list":           {readOnly: true},
-	"truenas_nfs_list":           {readOnly: true},
-	"truenas_alert_list":         {readOnly: true},
-	"truenas_app_list":           {readOnly: true},
-	"truenas_app_get":            {readOnly: true},
-	"truenas_app_config":         {readOnly: true},
-	"truenas_apps_update_report": {readOnly: true},
-	"truenas_jobs_list":          {readOnly: true},
+	"truenas_health_report":         {readOnly: true},
+	"truenas_system_info":           {readOnly: true},
+	"truenas_disk_list":             {readOnly: true},
+	"truenas_network_list":          {readOnly: true},
+	"truenas_pool_list":             {readOnly: true},
+	"truenas_pool_get":              {readOnly: true},
+	"truenas_dataset_list":          {readOnly: true},
+	"truenas_dataset_get":           {readOnly: true},
+	"truenas_snapshot_list":         {readOnly: true},
+	"truenas_snapshot_get":          {readOnly: true},
+	"truenas_snapshot_task_list":    {readOnly: true},
+	"truenas_replication_task_list": {readOnly: true},
+	"truenas_smb_list":              {readOnly: true},
+	"truenas_nfs_list":              {readOnly: true},
+	"truenas_alert_list":            {readOnly: true},
+	"truenas_app_list":              {readOnly: true},
+	"truenas_app_get":               {readOnly: true},
+	"truenas_app_config":            {readOnly: true},
+	"truenas_apps_update_report":    {readOnly: true},
+	"truenas_jobs_list":             {readOnly: true},
 
 	// Destructive writes: can lose data or settings, or are hard to undo.
 	"truenas_dataset_delete":  {destructive: true, idempotent: true},
@@ -43,6 +45,7 @@ var wantToolHints = map[string]toolHints{
 	"truenas_smb_delete":      {destructive: true, idempotent: true},
 	"truenas_nfs_delete":      {destructive: true, idempotent: true},
 	"truenas_app_configure":   {destructive: true},
+	"truenas_app_delete":      {destructive: true, idempotent: true},
 	// The app updates snapshot ix-volumes and host-path datasets first, but
 	// app.rollback restores only the ix-volumes, so host-path recovery is a
 	// manual ZFS rollback; see upgradeApp in tools_app.go.

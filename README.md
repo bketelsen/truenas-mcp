@@ -128,6 +128,8 @@ Tools marked with `*` are excluded by default and are registered only with `--en
 | `truenas_dataset_delete` | Delete a dataset `*` |
 | `truenas_snapshot_list` | Snapshots for a dataset |
 | `truenas_snapshot_get` | Snapshot details |
+| `truenas_snapshot_task_list` | Periodic snapshot tasks with schedule, retention, and last run (optionally for one dataset) |
+| `truenas_replication_task_list` | Replication tasks with source, target, schedule, retention, and last run. Never returns encryption keys or SSH credential secrets |
 | `truenas_snapshot_create` | Create a snapshot `*` |
 | `truenas_snapshot_delete` | Delete a snapshot `*` |
 | `truenas_smb_list` | SMB shares |
@@ -148,6 +150,7 @@ Tools marked with `*` are excluded by default and are registered only with `--en
 | `truenas_app_update` | Upgrade an app to the latest available version `*` |
 | `truenas_app_update_all` | Upgrade all apps with updates available `*` |
 | `truenas_app_configure` | Change an app's configuration values (deep-merged, redeploys the app) `*` |
+| `truenas_app_delete` | Delete an app (needs `confirm` = app name; `dry_run` shows the plan; returns a job ID) `*` |
 | `truenas_jobs_list` | Recent TrueNAS jobs, optionally filtered by state or method |
 
 Every middleware method these tools call was audited against TrueNAS 27.0 on 2026-10-22. See [yeti/api-audit.md](yeti/api-audit.md) for the method table and for the fallbacks that keep older releases working.
@@ -167,12 +170,13 @@ Every tool carries [MCP tool annotations](https://modelcontextprotocol.io/specif
 | `truenas_smb_delete` | Removes the share's settings and cuts off clients (the data stays) |
 | `truenas_nfs_delete` | Removes the export's settings and cuts off clients (the data stays) |
 | `truenas_app_configure` | Overwrites stored configuration values; TrueNAS keeps no prior copy |
+| `truenas_app_delete` | Deletes the app, its containers, docker volumes and images; with `remove_ix_volumes` also its ix-volumes and their snapshots. Host paths stay |
 | `truenas_app_update` | The upgrade snapshots the app's host-path datasets as well as its ix-volumes, but TrueNAS's app rollback restores only the ix-volumes. Undoing changes on host paths means rolling a dataset back by hand, which also reverts anything else stored in it (see [App updates and recovery](#app-updates-and-recovery)) |
 | `truenas_app_update_all` | The same as `truenas_app_update`, for every app with an update at once |
 
 **Non-destructive writes** (`destructiveHint: false`): these are additive or recoverable. They are `truenas_dataset_create`, `truenas_snapshot_create`, `truenas_smb_create`, `truenas_nfs_create`, `truenas_alert_dismiss`, `truenas_app_start`, `truenas_app_stop`, and `truenas_app_restart`. Starting or restarting an app still interrupts it briefly, and `truenas_smb_create` with `guest_ok` widens access.
 
-`idempotentHint: true` marks the write tools where repeating a call with the same arguments has no further effect: the four deletes, `truenas_dataset_create`, `truenas_smb_create`, `truenas_alert_dismiss`, `truenas_app_stop`, `truenas_app_update`, and `truenas_app_update_all`.
+`idempotentHint: true` marks the write tools where repeating a call with the same arguments has no further effect: the four deletes, `truenas_dataset_create`, `truenas_smb_create`, `truenas_alert_dismiss`, `truenas_app_stop`, `truenas_app_delete`, `truenas_app_update`, and `truenas_app_update_all`.
 
 ### App updates and recovery
 
