@@ -125,7 +125,8 @@ func registerDataProtectionWriteTools(s *mcp.Server, client truenas.Caller) {
 	s.AddTool(&mcp.Tool{
 		Name: "truenas_snapshot_task_create",
 		Description: "Create a periodic snapshot task: TrueNAS snapshots the dataset on the given cron schedule and " +
-			"deletes the task's own expired snapshots by the retention lifetime. Before creating, the tool queries the " +
+			"deletes the task's own expired snapshots by the retention lifetime. Retention can also delete existing " +
+			"snapshots on the dataset whose names match the naming schema. Before creating, the tool queries the " +
 			"existing tasks and returns an error naming the task id when one for the same dataset and naming schema " +
 			"exists. Set dry_run to return the exact payload without calling pool.snapshottask.create.",
 		InputSchema: schema(map[string]any{
@@ -144,8 +145,8 @@ func registerDataProtectionWriteTools(s *mcp.Server, client truenas.Caller) {
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Create Periodic Snapshot Task",
 			ReadOnlyHint:    false,
-			DestructiveHint: new(false), // adds a schedule; it only deletes the snapshots its own naming schema creates
-			IdempotentHint:  false,      // the duplicate guard is a read-then-write race, so a repeat can add a task
+			DestructiveHint: new(true), // retention selects snapshots by dataset and naming schema, so it can delete snapshots this task did not make
+			IdempotentHint:  false,     // the duplicate guard is a read-then-write race, so a repeat can add a task
 			OpenWorldHint:   new(false),
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -153,15 +154,30 @@ func registerDataProtectionWriteTools(s *mcp.Server, client truenas.Caller) {
 		if err != nil {
 			return nil, err
 		}
-		recursive := optionalBool(req, "recursive")
+		recursive, err := strictBool(req, "recursive", false)
+		if err != nil {
+			return nil, err
+		}
+		allowEmpty, err := strictBool(req, "allow_empty", true)
+		if err != nil {
+			return nil, err
+		}
+		enabled, err := strictBool(req, "enabled", true)
+		if err != nil {
+			return nil, err
+		}
+		dryRun, err := strictBool(req, "dry_run", false)
+		if err != nil {
+			return nil, err
+		}
 
-		exclude := []string{}
-		for i, item := range optionalSlice(req, "exclude") {
-			path, ok := item.(string)
-			if !ok {
-				return nil, fmt.Errorf("parameter %q must contain only strings (item %d is %T)", "exclude", i, item)
-			}
-			exclude = append(exclude, path)
+		paths, err := strictStringList(req, "exclude")
+		if err != nil {
+			return nil, err
+		}
+		exclude := paths
+		if exclude == nil {
+			exclude = []string{}
 		}
 		if len(exclude) > 0 && !recursive {
 			return nil, fmt.Errorf("parameter %q is only allowed when %q is true", "exclude", "recursive")
@@ -171,8 +187,10 @@ func registerDataProtectionWriteTools(s *mcp.Server, client truenas.Caller) {
 		if err != nil {
 			return nil, err
 		}
-		if lifetime < 1 || lifetime != math.Trunc(lifetime) {
-			return nil, fmt.Errorf("parameter %q must be an integer of at least 1, got %v", "lifetime_value", lifetime)
+		// The upper bound keeps the value far inside the middleware Integer field
+		// and inside an int, which the conversion below needs.
+		if lifetime < 1 || lifetime > 10000 || lifetime != math.Trunc(lifetime) {
+			return nil, fmt.Errorf("parameter %q must be an integer from 1 to 10000, got %v", "lifetime_value", lifetime)
 		}
 		unit, err := snapshotLifetimeUnit(req)
 		if err != nil {
@@ -195,8 +213,8 @@ func registerDataProtectionWriteTools(s *mcp.Server, client truenas.Caller) {
 			"lifetime_unit":  unit,
 			"naming_schema":  namingSchema,
 			"schedule":       schedule,
-			"allow_empty":    boolDefault(req, "allow_empty", true),
-			"enabled":        boolDefault(req, "enabled", true),
+			"allow_empty":    allowEmpty,
+			"enabled":        enabled,
 		}
 
 		// Duplicate guard: a retried call must not add a second task with the
@@ -217,7 +235,7 @@ func registerDataProtectionWriteTools(s *mcp.Server, client truenas.Caller) {
 			}
 		}
 
-		if boolDefault(req, "dry_run", false) {
+		if dryRun {
 			return jsonValueResult(map[string]any{
 				"dry_run": true,
 				"method":  "pool.snapshottask.create",
@@ -311,7 +329,10 @@ func snapshotTaskSchedule(req *mcp.CallToolRequest) (map[string]any, error) {
 		if value == "" {
 			value = defaults[key]
 		}
-		if _, err := time.Parse("15:04", value); err != nil {
+		// time.Parse accepts "1:30"; the middleware and the docs use HH:MM, so
+		// the canonical form must equal the input.
+		parsed, err := time.Parse("15:04", value)
+		if err != nil || parsed.Format("15:04") != value {
 			return nil, fmt.Errorf("schedule %s must be HH:MM, got %q", key, value)
 		}
 		out[key] = value

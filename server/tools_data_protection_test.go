@@ -671,3 +671,165 @@ func TestSnapshotTaskCreate_RegistrationMode(t *testing.T) {
 	})
 	_ = toolError(t, result, err)
 }
+
+// TestSnapshotTaskCreate_ArgumentTypes checks that a present argument of the
+// wrong type is refused before any middleware call. The SDK does not validate
+// arguments against InputSchema, so "false" as a string would otherwise become
+// the default and create a task with settings the caller did not ask for.
+func TestSnapshotTaskCreate_ArgumentTypes(t *testing.T) {
+	valid := func() map[string]any {
+		return map[string]any{
+			"dataset":        "tank/data",
+			"lifetime_value": float64(1),
+			"lifetime_unit":  "DAY",
+			"schedule":       map[string]any{"minute": "0", "hour": "0"},
+		}
+	}
+
+	cases := []struct {
+		name   string
+		field  string
+		value  any
+		wantMs string
+	}{
+		{"string dry_run", "dry_run", "true", `"dry_run"`},
+		{"string enabled false", "enabled", "false", `"enabled"`},
+		{"string allow_empty", "allow_empty", "false", `"allow_empty"`},
+		{"string recursive", "recursive", "true", `"recursive"`},
+		{"number dry_run", "dry_run", float64(1), `"dry_run"`},
+		{"exclude not an array", "exclude", "tank/data/tmp", `"exclude"`},
+		{"exclude item not a string", "exclude", []any{float64(1)}, `"exclude"`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			args := valid()
+			args[tc.field] = tc.value
+			mock, calls := newSnapshotTaskCreateCaller(`[]`, createdSnapshotTask, nil)
+			result, err := callTool(t, mock, false, "truenas_snapshot_task_create", args)
+			text := toolError(t, result, err)
+			if !strings.Contains(text, tc.wantMs) {
+				t.Errorf("error text = %q, want it to contain %q", text, tc.wantMs)
+			}
+			if n := calls.createCalls(); n != 0 {
+				t.Errorf("create calls = %d, want 0", n)
+			}
+			if len(calls.methods) != 0 {
+				t.Errorf("middleware calls %v, want none", calls.methods)
+			}
+		})
+	}
+
+	// A string dry_run must never reach pool.snapshottask.create, even though
+	// "true" reads as a truthy value to a lenient parser.
+	mock, calls := newSnapshotTaskCreateCaller(`[]`, createdSnapshotTask, nil)
+	args := valid()
+	args["dry_run"] = "true"
+	_, _ = callTool(t, mock, false, "truenas_snapshot_task_create", args)
+	if n := calls.createCalls(); n != 0 {
+		t.Fatalf("string dry_run made %d create calls, want 0", n)
+	}
+}
+
+func TestSnapshotTaskCreate_LifetimeBounds(t *testing.T) {
+	call := func(lifetime any) (*mcp.CallToolResult, *snapshotTaskCreateCalls, error) {
+		mock, calls := newSnapshotTaskCreateCaller(`[]`, createdSnapshotTask, nil)
+		result, err := callTool(t, mock, false, "truenas_snapshot_task_create", map[string]any{
+			"dataset":        "tank/data",
+			"lifetime_value": lifetime,
+			"lifetime_unit":  "DAY",
+			"schedule":       map[string]any{"minute": "0", "hour": "0"},
+		})
+		return result, calls, err
+	}
+
+	result, calls, err := call(float64(10000))
+	if err != nil {
+		t.Fatalf("lifetime 10000 must pass: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("lifetime 10000 must pass: %s", resultText(t, result))
+	}
+	if len(calls.createParams) != 1 {
+		t.Fatalf("create params = %v, want 1", calls.createParams)
+	}
+	assertSameJSON(t, calls.createParams[0], `{
+		"dataset": "tank/data",
+		"recursive": false,
+		"exclude": [],
+		"lifetime_value": 10000,
+		"lifetime_unit": "DAY",
+		"naming_schema": "auto-%Y-%m-%d_%H-%M",
+		"schedule": {"minute": "0", "hour": "0", "dom": "*", "month": "*", "dow": "*", "begin": "00:00", "end": "23:59"},
+		"allow_empty": true,
+		"enabled": true
+	}`)
+
+	for _, lifetime := range []float64{10001, 1e100} {
+		result, calls, err := call(lifetime)
+		text := toolError(t, result, err)
+		if !strings.Contains(text, "1 to 10000") {
+			t.Errorf("lifetime %v error = %q, want the allowed range", lifetime, text)
+		}
+		if len(calls.methods) != 0 {
+			t.Errorf("lifetime %v made middleware calls %v, want none", lifetime, calls.methods)
+		}
+	}
+}
+
+func TestSnapshotTaskCreate_ClockFormat(t *testing.T) {
+	cases := []struct {
+		name  string
+		key   string
+		value string
+		want  string // the value in the payload, "" for an error
+	}{
+		{"begin without a leading zero", "begin", "1:30", ""},
+		{"end without a leading zero", "end", "1:30", ""},
+		{"begin at hour 24", "begin", "24:00", ""},
+		{"end at hour 24", "end", "24:00", ""},
+		{"begin padded", "begin", "01:30", "01:30"},
+		{"end padded", "end", "23:59", "23:59"},
+		{"midnight", "begin", "00:00", "00:00"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mock, calls := newSnapshotTaskCreateCaller(`[]`, createdSnapshotTask, nil)
+			result, err := callTool(t, mock, false, "truenas_snapshot_task_create", map[string]any{
+				"dataset":        "tank/data",
+				"lifetime_value": float64(1),
+				"lifetime_unit":  "DAY",
+				"dry_run":        true,
+				"schedule":       map[string]any{"minute": "0", "hour": "0", tc.key: tc.value},
+			})
+			if tc.want == "" {
+				text := toolError(t, result, err)
+				if !strings.Contains(text, tc.key) || !strings.Contains(text, "HH:MM") {
+					t.Fatalf("error text = %q, want a %s HH:MM error", text, tc.key)
+				}
+				if len(calls.methods) != 0 {
+					t.Errorf("middleware calls %v, want none", calls.methods)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.IsError {
+				t.Fatalf("unexpected tool error: %s", resultText(t, result))
+			}
+			var got struct {
+				Payload struct {
+					Schedule map[string]any `json:"schedule"`
+				} `json:"payload"`
+			}
+			if err := json.Unmarshal([]byte(resultText(t, result)), &got); err != nil {
+				t.Fatalf("result is not JSON: %v", err)
+			}
+			if got.Payload.Schedule[tc.key] != tc.want {
+				t.Errorf("schedule %s = %v, want %q", tc.key, got.Payload.Schedule[tc.key], tc.want)
+			}
+		})
+	}
+}

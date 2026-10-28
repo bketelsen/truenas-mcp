@@ -122,22 +122,60 @@ func TestOptionalFloat64_absent(t *testing.T) {
 	}
 }
 
-func TestBoolDefault_present(t *testing.T) {
+func TestStrictBool_present(t *testing.T) {
 	req := makeReq(t, map[string]any{"enabled": false, "allow_empty": true})
-	if boolDefault(req, "enabled", true) {
-		t.Error("explicit false must win over a default of true")
+	if got, err := strictBool(req, "enabled", true); err != nil || got {
+		t.Errorf("explicit false must win over a default of true: got %v, err %v", got, err)
 	}
-	if !boolDefault(req, "allow_empty", false) {
-		t.Error("explicit true must win over a default of false")
+	if got, err := strictBool(req, "allow_empty", false); err != nil || !got {
+		t.Errorf("explicit true must win over a default of false: got %v, err %v", got, err)
 	}
 }
 
-func TestBoolDefault_absent(t *testing.T) {
-	req := makeReq(t, map[string]any{})
-	if !boolDefault(req, "enabled", true) {
-		t.Error("absent key must return the default true")
+func TestStrictBool_absent(t *testing.T) {
+	req := makeReq(t, map[string]any{"dry_run": nil})
+	if got, err := strictBool(req, "enabled", true); err != nil || !got {
+		t.Errorf("absent key must return the default true: got %v, err %v", got, err)
 	}
-	if boolDefault(req, "enabled", false) {
-		t.Error("absent key must return the default false")
+	if got, err := strictBool(req, "enabled", false); err != nil || got {
+		t.Errorf("absent key must return the default false: got %v, err %v", got, err)
+	}
+	if got, err := strictBool(req, "dry_run", true); err != nil || !got {
+		t.Errorf("null must count as absent: got %v, err %v", got, err)
+	}
+}
+
+func TestStrictBool_wrongType(t *testing.T) {
+	for _, value := range []any{"true", "false", float64(1), []any{true}} {
+		req := makeReq(t, map[string]any{"dry_run": value})
+		got, err := strictBool(req, "dry_run", false)
+		if err == nil {
+			t.Errorf("strictBool(%v) = %v, want an error", value, got)
+		}
+	}
+}
+
+func TestStrictStringList_present(t *testing.T) {
+	req := makeReq(t, map[string]any{"exclude": []any{"tank/a", "tank/b"}})
+	got, err := strictStringList(req, "exclude")
+	if err != nil || len(got) != 2 || got[0] != "tank/a" || got[1] != "tank/b" {
+		t.Fatalf("got %v, err %v", got, err)
+	}
+}
+
+func TestStrictStringList_absent(t *testing.T) {
+	for _, fields := range []map[string]any{{}, {"exclude": nil}} {
+		got, err := strictStringList(makeReq(t, fields), "exclude")
+		if err != nil || got != nil {
+			t.Errorf("got %v, err %v, want nil and no error", got, err)
+		}
+	}
+}
+
+func TestStrictStringList_wrongType(t *testing.T) {
+	for _, value := range []any{"tank/a", float64(3), []any{float64(1)}, []any{true}} {
+		if _, err := strictStringList(makeReq(t, map[string]any{"exclude": value}), "exclude"); err == nil {
+			t.Errorf("strictStringList(%v) gave no error", value)
+		}
 	}
 }

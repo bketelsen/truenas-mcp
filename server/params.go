@@ -51,15 +51,44 @@ func optionalBool(req *mcp.CallToolRequest, field string) bool {
 	return v
 }
 
-// boolDefault returns the boolean field, or def when the key is absent or is not
-// a boolean. optionalBool cannot express a default of true, because it returns
-// false for an absent key.
-func boolDefault(req *mcp.CallToolRequest, field string, def bool) bool {
+// strictBool returns the boolean field, or def when the key is absent or null. A
+// present value of another type is an error: the SDK does not validate arguments
+// against InputSchema, so a string "false" would otherwise become the default.
+func strictBool(req *mcp.CallToolRequest, field string, def bool) (bool, error) {
 	m := parseArgs(req)
-	if v, ok := m[field].(bool); ok {
-		return v
+	v, present := m[field]
+	if !present || v == nil {
+		return def, nil
 	}
-	return def
+	b, ok := v.(bool)
+	if !ok {
+		return false, fmt.Errorf("parameter %q must be a boolean, got %T", field, v)
+	}
+	return b, nil
+}
+
+// strictStringList returns the string items of an array field, or nil when the
+// key is absent or null. A present value that is not an array of strings is an
+// error, so a mistyped list cannot be dropped silently.
+func strictStringList(req *mcp.CallToolRequest, field string) ([]string, error) {
+	m := parseArgs(req)
+	v, present := m[field]
+	if !present || v == nil {
+		return nil, nil
+	}
+	items, ok := v.([]any)
+	if !ok {
+		return nil, fmt.Errorf("parameter %q must be an array of strings, got %T", field, v)
+	}
+	out := make([]string, 0, len(items))
+	for i, item := range items {
+		s, ok := item.(string)
+		if !ok {
+			return nil, fmt.Errorf("parameter %q must contain only strings (item %d is %T)", field, i, item)
+		}
+		out = append(out, s)
+	}
+	return out, nil
 }
 
 func optionalSlice(req *mcp.CallToolRequest, field string) []any {
