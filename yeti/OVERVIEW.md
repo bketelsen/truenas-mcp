@@ -19,7 +19,7 @@ main.go                  Entry point — uses Charm fang CLI framework
     ├── tools_pool.go     ZFS pool tools
     ├── tools_dataset.go  Dataset list/get/create/delete tools
     ├── tools_snapshot.go Snapshot list/get/create/delete tools
-    ├── tools_data_protection.go  Periodic snapshot task and replication task list tools (allow-listed summaries; no secrets)
+    ├── tools_data_protection.go  Periodic snapshot task and replication task list tools, plus the periodic snapshot task create tool (allow-listed summaries; no secrets)
     ├── tools_share.go    SMB and NFS share tools
     ├── tools_alert.go    Alert list/dismiss tools
     ├── tools_reports.go  Aggregated health report and job-list tools
@@ -82,7 +82,7 @@ Each tool is defined inline with `s.AddTool(&mcp.Tool{...}, handlerFunc)`. The h
 Every tool also sets `Annotations: &mcp.ToolAnnotations{...}` (go-sdk v1.4.0 field types: `ReadOnlyHint bool`, `DestructiveHint *bool`, `IdempotentHint bool`, `OpenWorldHint *bool`, `Title string`; the pointers use Go 1.26 `new(false)` / `new(true)`). Rules, enforced by `server/annotations_test.go`:
 - `Title` is always set, and `OpenWorldHint` is always `new(false)` — the only world is the one appliance.
 - Tools registered in read-only mode set `ReadOnlyHint: true`.
-- Write tools set `ReadOnlyHint: false` and an explicit `DestructiveHint` (the MCP default when omitted is true). `true` means the call can lose data or settings or is hard to undo (deletes, `truenas_app_configure`, `truenas_app_delete`, `truenas_app_update`, `truenas_app_update_all`); `false` means additive or recoverable.
+- Write tools set `ReadOnlyHint: false` and an explicit `DestructiveHint` (the MCP default when omitted is true). `true` means the call can lose data or settings or is hard to undo (deletes, `truenas_app_configure`, `truenas_app_delete`, `truenas_app_update`, `truenas_app_update_all`, `truenas_snapshot_task_create`); `false` means additive or recoverable.
 - `IdempotentHint: true` only when a repeat call with the same arguments has no further effect on the appliance.
 - Non-obvious classifications carry a trailing one-line comment explaining why (e.g. app updates stay destructive even though `upgradeApp` sends `snapshot_hostpaths: true`, because `app.rollback` restores only the ix-volumes snapshot and host-path snapshots need a manual ZFS rollback; `truenas_app_start` is not idempotent because `app.start` always runs `compose up --force-recreate`).
 
@@ -118,6 +118,9 @@ Read-only mode is the default. Unless writes are explicitly enabled with `--enab
 - `requireString()`, `optionalString()`
 - `requireFloat64()`, `optionalFloat64()`
 - `optionalBool()`, `optionalSlice()`
+- `strictBool()`, `strictStringList()` — for tools that must refuse a present argument of the wrong type
+
+`optionalBool()` returns false for an absent key, and both `optionalBool()` and `optionalSlice()` drop a value of the wrong type silently. The SDK does not validate arguments against `InputSchema`, so a new write tool should use `strictBool()` and `strictStringList()` for any argument whose default would change the effect of the call (`truenas_snapshot_task_create` needs this for `dry_run`, `enabled`, `allow_empty`, `recursive`, and `exclude`). A JSON `null` counts as absent in both helpers.
 
 Use these helpers instead of manually unpacking `req.Params.Arguments` in each tool.
 

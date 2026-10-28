@@ -32,6 +32,7 @@ func New(client truenas.Caller, readOnly bool) *mcp.Server {
 	if !readOnly {
 		registerDatasetWriteTools(s, client)
 		registerSnapshotWriteTools(s, client)
+		registerDataProtectionWriteTools(s, client)
 		registerShareWriteTools(s, client)
 		registerAlertWriteTools(s, client)
 		registerAppWriteTools(s, client)

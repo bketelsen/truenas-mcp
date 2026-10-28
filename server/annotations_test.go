@@ -51,6 +51,10 @@ var wantToolHints = map[string]toolHints{
 	// manual ZFS rollback; see upgradeApp in tools_app.go.
 	"truenas_app_update":     {destructive: true, idempotent: true},
 	"truenas_app_update_all": {destructive: true, idempotent: true},
+	// Zettarepl retention picks snapshots by dataset and naming schema, not by
+	// the task that made them, so a new task can delete older snapshots that
+	// match its naming schema.
+	"truenas_snapshot_task_create": {destructive: true},
 
 	// Non-destructive writes: additive or recoverable.
 	"truenas_dataset_create":  {idempotent: true},

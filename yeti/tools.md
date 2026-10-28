@@ -2,7 +2,7 @@
 
 Complete catalog of MCP tools exposed by truenas-mcp. Tools marked with **[write]** are excluded by default and are registered only with `--enable-writes` or `TRUENAS_ENABLE_WRITES=true`.
 
-Every tool carries MCP annotations (`Title`, `ReadOnlyHint`, `DestructiveHint`, `IdempotentHint`, `OpenWorldHint: false`) defined next to its `mcp.Tool` literal; `wantToolHints` in `server/annotations_test.go` is the authoritative classification table. All non-**[write]** tools are `readOnlyHint: true`. Destructive writes (`destructiveHint: true`): `truenas_dataset_delete`, `truenas_snapshot_delete`, `truenas_smb_delete`, `truenas_nfs_delete`, `truenas_app_configure`, `truenas_app_delete`, `truenas_app_update`, `truenas_app_update_all`. Every other **[write]** tool is `destructiveHint: false`.
+Every tool carries MCP annotations (`Title`, `ReadOnlyHint`, `DestructiveHint`, `IdempotentHint`, `OpenWorldHint: false`) defined next to its `mcp.Tool` literal; `wantToolHints` in `server/annotations_test.go` is the authoritative classification table. All non-**[write]** tools are `readOnlyHint: true`. Destructive writes (`destructiveHint: true`): `truenas_dataset_delete`, `truenas_snapshot_delete`, `truenas_smb_delete`, `truenas_nfs_delete`, `truenas_app_configure`, `truenas_app_delete`, `truenas_app_update`, `truenas_app_update_all`, `truenas_snapshot_task_create`. Every other **[write]** tool is `destructiveHint: false`.
 
 ## System Tools (`tools_system.go`)
 
@@ -97,7 +97,7 @@ Delete a ZFS snapshot. Destructive.
 
 ## Data Protection Tools (`tools_data_protection.go`)
 
-Both tools are read-only and registered by `registerDataProtectionReadTools`. They return a summary, not the raw middleware entry: each task is built from an allow-list of fields, so nothing unlisted can leak. Field names were checked against `PeriodicSnapshotTaskEntry` and `ReplicationEntry` in the `v25_10_0` and `v27_0_0` API models of truenas/middleware (not live).
+The two list tools are read-only and registered by `registerDataProtectionReadTools`. They return a summary, not the raw middleware entry: each task is built from an allow-list of fields, so nothing unlisted can leak. Field names were checked against `PeriodicSnapshotTaskEntry` and `ReplicationEntry` in the `v25_10_0` and `v27_0_0` API models of truenas/middleware (not live).
 
 Output shape for both: `{ "summary": {"total", "enabled", "failing"}, "tasks": [...] }`, tasks sorted by `id`. `failing` counts tasks whose `last_run.state` is `ERROR`. List fields are never null; `schedule` and `ssh_credentials` stay null when the middleware sends null.
 
@@ -109,6 +109,27 @@ List periodic snapshot tasks.
   - `dataset` (string, optional) — only tasks for exactly this dataset
 - API: `pool.snapshottask.query`; with `dataset` the filter `[["dataset", "=", dataset]]`, otherwise no parameters
 - Task fields: `id`, `dataset`, `recursive`, `exclude`, `enabled`, `naming_schema`, `allow_empty`, `schedule` (object passed through), `retention` = `{"value": lifetime_value, "unit": lifetime_unit}` (unit is HOUR/DAY/WEEK/MONTH/YEAR), `last_run`
+- The per-task projection is the `snapshotTaskSummary` helper in `tools_data_protection.go`. `truenas_snapshot_task_create` reports its created task through the same helper, so both tools always show the same fields.
+
+### `truenas_snapshot_task_create` **[write]**
+Create a periodic snapshot task: TrueNAS snapshots the dataset on the given cron schedule and deletes expired snapshots of the dataset by the retention lifetime. Retention selects snapshots by dataset and naming schema, not by the task that made them, so the tool is destructive.
+- Parameters:
+  - `dataset` (string, required) — dataset path (e.g. `tank/data`)
+  - `lifetime_value` (number, required) — retention lifetime, an integer from 1 to 10000
+  - `lifetime_unit` (string, required) — `HOUR`, `DAY`, `WEEK`, `MONTH`, or `YEAR`; any case is accepted and the tool sends upper case
+  - `schedule` (object, required) — `minute` and `hour` (required strings); `dom`, `month`, `dow` (optional, default `*`); `begin` (default `00:00`) and `end` (default `23:59`), both `HH:MM`. Unknown keys are refused, so a typo cannot fall back to a default silently
+  - `recursive` (boolean, optional, default false) — snapshot child datasets too
+  - `exclude` (string[], optional, default empty) — datasets to skip; refused when `recursive` is not true
+  - `naming_schema` (string, optional) — default `auto-%Y-%m-%d_%H-%M`
+  - `allow_empty` (boolean, optional, default true) — take a snapshot even when the dataset holds no data
+  - `enabled` (boolean, optional, default true) — create the task enabled
+  - `dry_run` (boolean, optional, default false) — return the payload and do not create
+- Argument types are checked with `strictBool` and `strictStringList` in `server/params.go`: a present value of the wrong type (for example the string `"false"` for `enabled`) is an error before any middleware call. The SDK does not validate arguments against `InputSchema`, so a lenient reader would turn such a value into the default and create a task the caller did not ask for.
+- APIs: `pool.snapshottask.query` with filter `[["dataset", "=", dataset]]` (duplicate guard, also on a dry run), then `pool.snapshottask.create` with 1 object: `dataset`, `recursive`, `exclude`, `lifetime_value`, `lifetime_unit`, `naming_schema`, `schedule` (all 7 keys), `allow_empty`, `enabled`. No other keys are sent
+- Duplicate guard: the client never replays a call after a transport error, and an AI client can retry a call whose result it did not see. When a task with the same `dataset` and the same `naming_schema` exists, the tool returns an error that names the existing task id and creates nothing. The same dataset with another naming schema is allowed
+- Returns: the created task, projected by `snapshotTaskSummary` (the field set of `truenas_snapshot_task_list`); with `dry_run`: `{ "dry_run": true, "method": "pool.snapshottask.create", "payload": {...} }`
+- Retention risk: zettarepl retention selects snapshots by dataset and naming schema, not by the task that made them. A new task can therefore delete older snapshots whose names match its naming schema, from a removed task or made by hand. So the tool is `destructiveHint: true`. It is not idempotent: the duplicate guard is a read-then-write check, so a repeat can add a task.
+- `lifetime_value` is limited to 1 to 10000; the bound keeps the value inside the middleware Integer field and inside an `int`, which the payload conversion needs. `begin` and `end` must be the canonical `HH:MM` form: `time.Parse("15:04", v)` must format back to `v`, so `1:30` is refused and `01:30` is accepted.
 
 ### `truenas_replication_task_list`
 List replication tasks.
