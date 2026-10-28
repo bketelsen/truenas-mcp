@@ -53,14 +53,15 @@ var wantToolHints = map[string]toolHints{
 	"truenas_app_update_all": {destructive: true, idempotent: true},
 
 	// Non-destructive writes: additive or recoverable.
-	"truenas_dataset_create":  {idempotent: true},
-	"truenas_snapshot_create": {},
-	"truenas_smb_create":      {idempotent: true},
-	"truenas_nfs_create":      {},
-	"truenas_alert_dismiss":   {idempotent: true},
-	"truenas_app_start":       {},
-	"truenas_app_stop":        {idempotent: true},
-	"truenas_app_restart":     {},
+	"truenas_dataset_create":       {idempotent: true},
+	"truenas_snapshot_create":      {},
+	"truenas_snapshot_task_create": {},
+	"truenas_smb_create":           {idempotent: true},
+	"truenas_nfs_create":           {},
+	"truenas_alert_dismiss":        {idempotent: true},
+	"truenas_app_start":            {},
+	"truenas_app_stop":             {idempotent: true},
+	"truenas_app_restart":          {},
 }
 
 func annotationsMock() *mockCaller {

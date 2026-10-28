@@ -19,7 +19,7 @@ main.go                  Entry point — uses Charm fang CLI framework
     ├── tools_pool.go     ZFS pool tools
     ├── tools_dataset.go  Dataset list/get/create/delete tools
     ├── tools_snapshot.go Snapshot list/get/create/delete tools
-    ├── tools_data_protection.go  Periodic snapshot task and replication task list tools (allow-listed summaries; no secrets)
+    ├── tools_data_protection.go  Periodic snapshot task and replication task list tools, plus the periodic snapshot task create tool (allow-listed summaries; no secrets)
     ├── tools_share.go    SMB and NFS share tools
     ├── tools_alert.go    Alert list/dismiss tools
     ├── tools_reports.go  Aggregated health report and job-list tools
@@ -117,7 +117,9 @@ Read-only mode is the default. Unless writes are explicitly enabled with `--enab
 `server/params.go` defines typed accessors for MCP arguments:
 - `requireString()`, `optionalString()`
 - `requireFloat64()`, `optionalFloat64()`
-- `optionalBool()`, `optionalSlice()`
+- `optionalBool()`, `boolDefault()`, `optionalSlice()`
+
+`boolDefault()` returns a caller-supplied default when the key is absent, because `optionalBool()` returns false for an absent key and cannot express a default of true (`truenas_snapshot_task_create` needs `allow_empty` and `enabled` to default to true).
 
 Use these helpers instead of manually unpacking `req.Params.Arguments` in each tool.
 

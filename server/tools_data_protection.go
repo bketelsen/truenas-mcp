@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -51,21 +53,7 @@ func registerDataProtectionReadTools(s *mcp.Server, client truenas.Caller) {
 
 		tasks := make([]map[string]any, 0, len(entries))
 		for _, e := range entries {
-			tasks = append(tasks, map[string]any{
-				"id":            e["id"],
-				"dataset":       e["dataset"],
-				"recursive":     e["recursive"],
-				"exclude":       listOrEmpty(e["exclude"]),
-				"enabled":       e["enabled"],
-				"naming_schema": e["naming_schema"],
-				"allow_empty":   e["allow_empty"],
-				"schedule":      e["schedule"],
-				"retention": map[string]any{
-					"value": e["lifetime_value"],
-					"unit":  e["lifetime_unit"],
-				},
-				"last_run": lastRun(e["state"], nil, false),
-			})
+			tasks = append(tasks, snapshotTaskSummary(e))
 		}
 		return jsonValueResult(taskReport(entries, tasks))
 	})
@@ -124,6 +112,232 @@ func registerDataProtectionReadTools(s *mcp.Server, client truenas.Caller) {
 		}
 		return jsonValueResult(taskReport(entries, tasks))
 	})
+}
+
+// registerDataProtectionWriteTools registers the write tool that creates a
+// periodic snapshot task.
+//
+// The client never replays a call after a transport error, and an AI client may
+// retry a call whose result it did not see. The tool therefore queries the
+// existing tasks first and refuses to create a second task for the same dataset
+// and naming schema, so a retry cannot add a duplicate schedule.
+func registerDataProtectionWriteTools(s *mcp.Server, client truenas.Caller) {
+	s.AddTool(&mcp.Tool{
+		Name: "truenas_snapshot_task_create",
+		Description: "Create a periodic snapshot task: TrueNAS snapshots the dataset on the given cron schedule and " +
+			"deletes the task's own expired snapshots by the retention lifetime. Before creating, the tool queries the " +
+			"existing tasks and returns an error naming the task id when one for the same dataset and naming schema " +
+			"exists. Set dry_run to return the exact payload without calling pool.snapshottask.create.",
+		InputSchema: schema(map[string]any{
+			"dataset":        stringProp("dataset path to snapshot (e.g. tank/data)"),
+			"recursive":      boolProp("snapshot child datasets too (default false)"),
+			"exclude":        arrayProp("datasets to skip; only allowed when recursive is true"),
+			"lifetime_value": numberProp("retention lifetime, an integer of at least 1"),
+			"lifetime_unit":  stringProp("retention lifetime unit: HOUR, DAY, WEEK, MONTH, or YEAR (case-insensitive)"),
+			"naming_schema":  stringProp("snapshot name schema (default auto-%Y-%m-%d_%H-%M)"),
+			"schedule": objectProp("cron schedule: minute and hour required; dom, month, and dow default to *; " +
+				"begin (default 00:00) and end (default 23:59) are HH:MM"),
+			"allow_empty": boolProp("take a snapshot even when the dataset holds no data (default true)"),
+			"enabled":     boolProp("create the task enabled (default true)"),
+			"dry_run":     boolProp("when true, return the exact payload without calling pool.snapshottask.create"),
+		}, "dataset", "lifetime_value", "lifetime_unit", "schedule"),
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Create Periodic Snapshot Task",
+			ReadOnlyHint:    false,
+			DestructiveHint: new(false), // adds a schedule; it only deletes the snapshots its own naming schema creates
+			IdempotentHint:  false,      // the duplicate guard is a read-then-write race, so a repeat can add a task
+			OpenWorldHint:   new(false),
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		dataset, err := requireString(req, "dataset")
+		if err != nil {
+			return nil, err
+		}
+		recursive := optionalBool(req, "recursive")
+
+		exclude := []string{}
+		for i, item := range optionalSlice(req, "exclude") {
+			path, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("parameter %q must contain only strings (item %d is %T)", "exclude", i, item)
+			}
+			exclude = append(exclude, path)
+		}
+		if len(exclude) > 0 && !recursive {
+			return nil, fmt.Errorf("parameter %q is only allowed when %q is true", "exclude", "recursive")
+		}
+
+		lifetime, err := requireFloat64(req, "lifetime_value")
+		if err != nil {
+			return nil, err
+		}
+		if lifetime < 1 || lifetime != math.Trunc(lifetime) {
+			return nil, fmt.Errorf("parameter %q must be an integer of at least 1, got %v", "lifetime_value", lifetime)
+		}
+		unit, err := snapshotLifetimeUnit(req)
+		if err != nil {
+			return nil, err
+		}
+		schedule, err := snapshotTaskSchedule(req)
+		if err != nil {
+			return nil, err
+		}
+		namingSchema := optionalString(req, "naming_schema")
+		if namingSchema == "" {
+			namingSchema = defaultSnapshotNamingSchema
+		}
+
+		payload := map[string]any{
+			"dataset":        dataset,
+			"recursive":      recursive,
+			"exclude":        exclude,
+			"lifetime_value": int(lifetime),
+			"lifetime_unit":  unit,
+			"naming_schema":  namingSchema,
+			"schedule":       schedule,
+			"allow_empty":    boolDefault(req, "allow_empty", true),
+			"enabled":        boolDefault(req, "enabled", true),
+		}
+
+		// Duplicate guard: a retried call must not add a second task with the
+		// same dataset and naming schema. The check also runs on a dry run, so
+		// the answer matches what a real call would do.
+		result, err := client.Call("pool.snapshottask.query", [][]any{{"dataset", "=", dataset}})
+		if err != nil {
+			return nil, fmt.Errorf("pool.snapshottask.query: %w", err)
+		}
+		var existing []map[string]any
+		if err := json.Unmarshal(result, &existing); err != nil {
+			return nil, fmt.Errorf("parsing pool.snapshottask.query: %w", err)
+		}
+		for _, task := range existing {
+			if existingSchema, _ := task["naming_schema"].(string); existingSchema == namingSchema {
+				return nil, fmt.Errorf("a periodic snapshot task for dataset %q with naming schema %q already exists (id %v); "+
+					"nothing was created", dataset, namingSchema, task["id"])
+			}
+		}
+
+		if boolDefault(req, "dry_run", false) {
+			return jsonValueResult(map[string]any{
+				"dry_run": true,
+				"method":  "pool.snapshottask.create",
+				"payload": payload,
+			})
+		}
+
+		result, err = client.Call("pool.snapshottask.create", payload)
+		if err != nil {
+			return nil, fmt.Errorf("pool.snapshottask.create: %w", err)
+		}
+		var created map[string]any
+		if err := json.Unmarshal(result, &created); err != nil {
+			return nil, fmt.Errorf("parsing pool.snapshottask.create: %w", err)
+		}
+		return jsonValueResult(snapshotTaskSummary(created))
+	})
+}
+
+// defaultSnapshotNamingSchema is the naming schema the create tool sends when
+// the caller omits one; it is the TrueNAS default for a periodic snapshot task.
+const defaultSnapshotNamingSchema = "auto-%Y-%m-%d_%H-%M"
+
+// snapshotLifetimeUnits holds the retention units pool.snapshottask.create
+// accepts.
+var snapshotLifetimeUnits = map[string]bool{
+	"HOUR":  true,
+	"DAY":   true,
+	"WEEK":  true,
+	"MONTH": true,
+	"YEAR":  true,
+}
+
+// snapshotLifetimeUnit reads lifetime_unit and returns it upper-cased, the form
+// the middleware enum expects, or an error when it is missing or unknown.
+func snapshotLifetimeUnit(req *mcp.CallToolRequest) (string, error) {
+	unit, err := requireString(req, "lifetime_unit")
+	if err != nil {
+		return "", err
+	}
+	unit = strings.ToUpper(unit)
+	if !snapshotLifetimeUnits[unit] {
+		return "", fmt.Errorf("parameter %q must be one of HOUR, DAY, WEEK, MONTH, YEAR, got %q", "lifetime_unit", unit)
+	}
+	return unit, nil
+}
+
+// snapshotTaskSchedule builds the complete 7-key schedule object from the
+// "schedule" argument. Unknown keys are refused, so a typo cannot fall back to
+// a default silently.
+func snapshotTaskSchedule(req *mcp.CallToolRequest) (map[string]any, error) {
+	raw, err := requireObject(req, "schedule")
+	if err != nil {
+		return nil, err
+	}
+	allowed := []string{"minute", "hour", "dom", "month", "dow", "begin", "end"}
+	isAllowed := make(map[string]bool, len(allowed))
+	for _, key := range allowed {
+		isAllowed[key] = true
+	}
+
+	values := make(map[string]string, len(raw))
+	for key, v := range raw {
+		if !isAllowed[key] {
+			return nil, fmt.Errorf("unknown schedule key %q; allowed keys are %s", key, strings.Join(allowed, ", "))
+		}
+		value, ok := v.(string)
+		if !ok {
+			return nil, fmt.Errorf("schedule key %q must be a string, got %T", key, v)
+		}
+		values[key] = value
+	}
+
+	out := make(map[string]any, len(allowed))
+	for _, key := range []string{"minute", "hour"} {
+		if values[key] == "" {
+			return nil, fmt.Errorf("required parameter %q missing from schedule", key)
+		}
+		out[key] = values[key]
+	}
+	for _, key := range []string{"dom", "month", "dow"} {
+		value := values[key]
+		if value == "" {
+			value = "*"
+		}
+		out[key] = value
+	}
+	defaults := map[string]string{"begin": "00:00", "end": "23:59"}
+	for _, key := range []string{"begin", "end"} {
+		value := values[key]
+		if value == "" {
+			value = defaults[key]
+		}
+		if _, err := time.Parse("15:04", value); err != nil {
+			return nil, fmt.Errorf("schedule %s must be HH:MM, got %q", key, value)
+		}
+		out[key] = value
+	}
+	return out, nil
+}
+
+// snapshotTaskSummary projects a PeriodicSnapshotTaskEntry onto the fields both
+// snapshot task tools report. It is an allow-list: a field that is not listed
+// here never reaches a result.
+func snapshotTaskSummary(e map[string]any) map[string]any {
+	return map[string]any{
+		"id":            e["id"],
+		"dataset":       e["dataset"],
+		"recursive":     e["recursive"],
+		"exclude":       listOrEmpty(e["exclude"]),
+		"enabled":       e["enabled"],
+		"naming_schema": e["naming_schema"],
+		"allow_empty":   e["allow_empty"],
+		"schedule":      e["schedule"],
+		"retention": map[string]any{
+			"value": e["lifetime_value"],
+			"unit":  e["lifetime_unit"],
+		},
+		"last_run": lastRun(e["state"], nil, false),
+	}
 }
 
 // taskReport wraps built tasks with the summary counts. entries and tasks are

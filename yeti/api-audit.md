@@ -50,11 +50,12 @@ one up in `core.get_methods` (keys are method names; each value has `accepts`, `
 | `app.update` | `truenas_app_configure` | present (job) | `app_name`, `{values}` | OK (schema) |
 | `app.upgrade` | `truenas_app_update`, `truenas_app_update_all` | present (job) | `app_version`, `values`, `snapshot_hostpaths` | OK (schema) |
 | `core.get_jobs` | `truenas_jobs_list` | present | filters, `order_by`, `limit` | OK (live) |
-| `pool.snapshottask.query` | `truenas_snapshot_task_list` | present | none, or filter `dataset =` | OK (schema + middleware source, not called live) |
+| `pool.snapshottask.query` | `truenas_snapshot_task_list`, `truenas_snapshot_task_create` | present | none, or filter `dataset =` | OK (schema + middleware source, not called live) |
+| `pool.snapshottask.create` | `truenas_snapshot_task_create` | present | 1 object: `dataset`, `recursive`, `exclude`, `lifetime_value`, `lifetime_unit` (upper-case enum), `naming_schema`, `schedule` (minute, hour, dom, month, dow, begin, end), `allow_empty`, `enabled` | OK (schema + middleware source, not called live) |
 | `replication.query` | `truenas_replication_task_list` | present | none | OK (schema + middleware source, not called live) |
 | `app.delete` | `truenas_app_delete` | present (job) | `app_name`, `{remove_images, remove_ix_volumes, force_remove_custom_app}` | OK (schema + middleware source, not called live) |
 
-The last 3 rows (`pool.snapshottask.query`, `replication.query`, `app.delete`) were added after the audit. They were checked against the `v25_10_0` and `v27_0_0` API models in truenas/middleware (`PeriodicSnapshotTaskEntry`, `ReplicationEntry`, `AppDelete`), not against a live NAS.
+The last 4 rows (`pool.snapshottask.query`, `pool.snapshottask.create`, `replication.query`, `app.delete`) were added after the audit. They were checked against the `v25_10_0` and `v27_0_0` API models in truenas/middleware (`PeriodicSnapshotTaskEntry`, `PeriodicSnapshotTaskCreate`, `ReplicationEntry`, `AppDelete`), not against a live NAS. `pool.snapshottask.create` was never called, because it writes.
 
 ## Gaps and fixes
 

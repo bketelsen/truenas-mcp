@@ -3,8 +3,12 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // snapshotTasksFixture is out of id order on purpose. Task 7 failed, task 3
@@ -321,4 +325,349 @@ func TestWireDatetime(t *testing.T) {
 			t.Errorf("wireDatetime(%v) = %v, want unchanged", in, got)
 		}
 	}
+}
+
+// snapshotTaskCreateCalls records the middleware calls the create tool makes.
+type snapshotTaskCreateCalls struct {
+	methods      []string
+	queryParams  []interface{}
+	createParams []interface{}
+}
+
+func (c *snapshotTaskCreateCalls) createCalls() int {
+	return len(c.createParams)
+}
+
+// newSnapshotTaskCreateCaller answers the duplicate-guard query with
+// queryResult and the create with createResult, or with createErr.
+func newSnapshotTaskCreateCaller(queryResult, createResult string, createErr error) (*mockCaller, *snapshotTaskCreateCalls) {
+	calls := &snapshotTaskCreateCalls{}
+	mock := &mockCaller{
+		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+			calls.methods = append(calls.methods, method)
+			switch method {
+			case "pool.snapshottask.query":
+				calls.queryParams = params
+				return json.RawMessage(queryResult), nil
+			case "pool.snapshottask.create":
+				calls.createParams = params
+				if createErr != nil {
+					return nil, createErr
+				}
+				return json.RawMessage(createResult), nil
+			}
+			return nil, errors.New("unexpected method " + method)
+		},
+	}
+	return mock, calls
+}
+
+// createdSnapshotTask is the entry the fake middleware returns from
+// pool.snapshottask.create. It carries fields the projection must drop.
+const createdSnapshotTask = `{"id": 12, "dataset": "tank/data", "recursive": true, "exclude": ["tank/data/tmp"],
+  "lifetime_value": 2, "lifetime_unit": "WEEK", "enabled": true, "naming_schema": "nightly-%Y%m%d",
+  "allow_empty": false, "vmware_sync": false,
+  "schedule": {"minute": "0", "hour": "3", "dom": "*", "month": "*", "dow": "*", "begin": "00:00", "end": "23:59"},
+  "state": {"state": "PENDING"}}`
+
+func assertSameJSON(t *testing.T, got any, want string) {
+	t.Helper()
+	gotText, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal got: %v", err)
+	}
+	var gotValue, wantValue any
+	if err := json.Unmarshal(gotText, &gotValue); err != nil {
+		t.Fatalf("unmarshal got: %v", err)
+	}
+	if err := json.Unmarshal([]byte(want), &wantValue); err != nil {
+		t.Fatalf("unmarshal want: %v", err)
+	}
+	if !reflect.DeepEqual(gotValue, wantValue) {
+		t.Errorf("payload = %s\nwant       %s", gotText, want)
+	}
+}
+
+// toolError returns the text of a tool error, from the transport error or from
+// the result, and fails when the call did not fail.
+func toolError(t *testing.T, result *mcp.CallToolResult, err error) string {
+	t.Helper()
+	if err != nil {
+		return err.Error()
+	}
+	if result != nil && result.IsError {
+		return resultText(t, result)
+	}
+	t.Fatal("expected the call to fail")
+	return ""
+}
+
+func TestSnapshotTaskCreate_FullPayload(t *testing.T) {
+	mock, calls := newSnapshotTaskCreateCaller(`[]`, createdSnapshotTask, nil)
+	result, err := callTool(t, mock, false, "truenas_snapshot_task_create", map[string]any{
+		"dataset":        "tank/data",
+		"recursive":      true,
+		"exclude":        []any{"tank/data/tmp"},
+		"lifetime_value": float64(2),
+		"lifetime_unit":  "week",
+		"naming_schema":  "nightly-%Y%m%d",
+		"schedule": map[string]any{
+			"minute": "0", "hour": "3", "dom": "1", "month": "*", "dow": "5", "begin": "01:30", "end": "22:00",
+		},
+		"allow_empty": false,
+		"enabled":     false,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("tool error: %s", resultText(t, result))
+	}
+
+	if want := []string{"pool.snapshottask.query", "pool.snapshottask.create"}; !reflect.DeepEqual(calls.methods, want) {
+		t.Errorf("methods = %v, want %v", calls.methods, want)
+	}
+	if len(calls.queryParams) != 1 {
+		t.Fatalf("query params = %v, want 1 filter", calls.queryParams)
+	}
+	if filter, ok := calls.queryParams[0].([][]any); !ok || len(filter) != 1 ||
+		filter[0][0] != "dataset" || filter[0][1] != "=" || filter[0][2] != "tank/data" {
+		t.Errorf("query filter = %v, want [[dataset = tank/data]]", calls.queryParams[0])
+	}
+	if len(calls.createParams) != 1 {
+		t.Fatalf("create params = %v, want exactly 1 object", calls.createParams)
+	}
+	assertSameJSON(t, calls.createParams[0], `{
+		"dataset": "tank/data",
+		"recursive": true,
+		"exclude": ["tank/data/tmp"],
+		"lifetime_value": 2,
+		"lifetime_unit": "WEEK",
+		"naming_schema": "nightly-%Y%m%d",
+		"schedule": {"minute": "0", "hour": "3", "dom": "1", "month": "*", "dow": "5", "begin": "01:30", "end": "22:00"},
+		"allow_empty": false,
+		"enabled": false
+	}`)
+
+	// The result is the created task, projected onto the list tool's fields.
+	var task map[string]any
+	if err := json.Unmarshal([]byte(resultText(t, result)), &task); err != nil {
+		t.Fatalf("result is not a JSON object: %v\n%s", err, resultText(t, result))
+	}
+	if task["id"] != float64(12) || task["dataset"] != "tank/data" || task["recursive"] != true ||
+		task["enabled"] != true || task["naming_schema"] != "nightly-%Y%m%d" || task["allow_empty"] != false {
+		t.Errorf("task fields = %v", task)
+	}
+	retention := task["retention"].(map[string]any)
+	if retention["value"] != float64(2) || retention["unit"] != "WEEK" {
+		t.Errorf("retention = %v, want 2 WEEK", retention)
+	}
+	if lr := task["last_run"].(map[string]any); lr["state"] != "PENDING" {
+		t.Errorf("last_run = %v, want state PENDING", lr)
+	}
+	if _, leaked := task["vmware_sync"]; leaked {
+		t.Error("unexpected vmware_sync in output")
+	}
+	if _, leaked := task["lifetime_value"]; leaked {
+		t.Error("lifetime_value must be reported inside retention only")
+	}
+}
+
+func TestSnapshotTaskCreate_Defaults(t *testing.T) {
+	mock, calls := newSnapshotTaskCreateCaller(`[]`, `{"id": 1, "dataset": "tank/data"}`, nil)
+	result, err := callTool(t, mock, false, "truenas_snapshot_task_create", map[string]any{
+		"dataset":        "tank/data",
+		"lifetime_value": float64(1),
+		"lifetime_unit":  "Day",
+		"schedule":       map[string]any{"minute": "*/15", "hour": "*"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("tool error: %s", resultText(t, result))
+	}
+	if len(calls.createParams) != 1 {
+		t.Fatalf("create params = %v, want 1", calls.createParams)
+	}
+	assertSameJSON(t, calls.createParams[0], `{
+		"dataset": "tank/data",
+		"recursive": false,
+		"exclude": [],
+		"lifetime_value": 1,
+		"lifetime_unit": "DAY",
+		"naming_schema": "auto-%Y-%m-%d_%H-%M",
+		"schedule": {"minute": "*/15", "hour": "*", "dom": "*", "month": "*", "dow": "*", "begin": "00:00", "end": "23:59"},
+		"allow_empty": true,
+		"enabled": true
+	}`)
+}
+
+func TestSnapshotTaskCreate_DryRun(t *testing.T) {
+	mock, calls := newSnapshotTaskCreateCaller(`[]`, "", nil)
+	result, err := callTool(t, mock, false, "truenas_snapshot_task_create", map[string]any{
+		"dataset":        "tank/data",
+		"lifetime_value": float64(3),
+		"lifetime_unit":  "MONTH",
+		"schedule":       map[string]any{"minute": "0", "hour": "2"},
+		"dry_run":        true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("tool error: %s", resultText(t, result))
+	}
+	if n := calls.createCalls(); n != 0 {
+		t.Fatalf("dry_run made %d create calls, want 0", n)
+	}
+	if want := []string{"pool.snapshottask.query"}; !reflect.DeepEqual(calls.methods, want) {
+		t.Errorf("methods = %v, want %v", calls.methods, want)
+	}
+	var got struct {
+		DryRun  bool           `json:"dry_run"`
+		Method  string         `json:"method"`
+		Payload map[string]any `json:"payload"`
+	}
+	if err := json.Unmarshal([]byte(resultText(t, result)), &got); err != nil {
+		t.Fatalf("result is not JSON: %v\n%s", err, resultText(t, result))
+	}
+	if !got.DryRun || got.Method != "pool.snapshottask.create" {
+		t.Errorf("dry run answer = %v", got)
+	}
+	assertSameJSON(t, got.Payload, `{
+		"dataset": "tank/data",
+		"recursive": false,
+		"exclude": [],
+		"lifetime_value": 3,
+		"lifetime_unit": "MONTH",
+		"naming_schema": "auto-%Y-%m-%d_%H-%M",
+		"schedule": {"minute": "0", "hour": "2", "dom": "*", "month": "*", "dow": "*", "begin": "00:00", "end": "23:59"},
+		"allow_empty": true,
+		"enabled": true
+	}`)
+}
+
+func TestSnapshotTaskCreate_DuplicateGuard(t *testing.T) {
+	existing := `[{"id": 7, "dataset": "tank/data", "naming_schema": "auto-%Y-%m-%d_%H-%M"}]`
+	mock, calls := newSnapshotTaskCreateCaller(existing, createdSnapshotTask, nil)
+	result, err := callTool(t, mock, false, "truenas_snapshot_task_create", map[string]any{
+		"dataset":        "tank/data",
+		"lifetime_value": float64(1),
+		"lifetime_unit":  "DAY",
+		"schedule":       map[string]any{"minute": "0", "hour": "0"},
+	})
+	text := toolError(t, result, err)
+	if !strings.Contains(text, "already exists") || !strings.Contains(text, "7") {
+		t.Errorf("error text = %q, want the existing task id", text)
+	}
+	if n := calls.createCalls(); n != 0 {
+		t.Errorf("duplicate guard made %d create calls, want 0", n)
+	}
+
+	// The same dataset with another naming schema may be created.
+	mock, calls = newSnapshotTaskCreateCaller(existing, createdSnapshotTask, nil)
+	result, err = callTool(t, mock, false, "truenas_snapshot_task_create", map[string]any{
+		"dataset":        "tank/data",
+		"lifetime_value": float64(1),
+		"lifetime_unit":  "DAY",
+		"naming_schema":  "other-%Y",
+		"schedule":       map[string]any{"minute": "0", "hour": "0"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("tool error: %s", resultText(t, result))
+	}
+	if n := calls.createCalls(); n != 1 {
+		t.Errorf("create calls = %d, want 1", n)
+	}
+}
+
+func TestSnapshotTaskCreate_ValidationErrors(t *testing.T) {
+	valid := func() map[string]any {
+		return map[string]any{
+			"dataset":        "tank/data",
+			"lifetime_value": float64(1),
+			"lifetime_unit":  "DAY",
+			"schedule":       map[string]any{"minute": "0", "hour": "0"},
+		}
+	}
+
+	cases := []struct {
+		name    string
+		mutate  func(args map[string]any)
+		wantMsg string
+	}{
+		{"missing dataset", func(a map[string]any) { delete(a, "dataset") }, `"dataset"`},
+		{"zero lifetime", func(a map[string]any) { a["lifetime_value"] = float64(0) }, `"lifetime_value"`},
+		{"fractional lifetime", func(a map[string]any) { a["lifetime_value"] = 1.5 }, `"lifetime_value"`},
+		{"bad unit", func(a map[string]any) { a["lifetime_unit"] = "FORTNIGHT" }, `"lifetime_unit"`},
+		{"exclude without recursive", func(a map[string]any) {
+			a["exclude"] = []any{"tank/data/tmp"}
+		}, `"exclude"`},
+		{"unknown schedule key", func(a map[string]any) {
+			a["schedule"] = map[string]any{"minute": "0", "hour": "0", "seconds": "0"}
+		}, "seconds"},
+		{"missing schedule minute", func(a map[string]any) {
+			a["schedule"] = map[string]any{"hour": "0"}
+		}, `"minute"`},
+		{"bad begin", func(a map[string]any) {
+			a["schedule"] = map[string]any{"minute": "0", "hour": "0", "begin": "midnight"}
+		}, "begin"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			args := valid()
+			tc.mutate(args)
+			mock, calls := newSnapshotTaskCreateCaller(`[]`, createdSnapshotTask, nil)
+			result, err := callTool(t, mock, false, "truenas_snapshot_task_create", args)
+			text := toolError(t, result, err)
+			if !strings.Contains(text, tc.wantMsg) {
+				t.Errorf("error text = %q, want it to contain %q", text, tc.wantMsg)
+			}
+			if len(calls.methods) != 0 {
+				t.Errorf("validation error made middleware calls %v, want none", calls.methods)
+			}
+		})
+	}
+}
+
+func TestSnapshotTaskCreate_APIError(t *testing.T) {
+	mock, calls := newSnapshotTaskCreateCaller(`[]`, "", errors.New("boom"))
+	result, err := callTool(t, mock, false, "truenas_snapshot_task_create", map[string]any{
+		"dataset":        "tank/data",
+		"lifetime_value": float64(1),
+		"lifetime_unit":  "DAY",
+		"schedule":       map[string]any{"minute": "0", "hour": "0"},
+	})
+	text := toolError(t, result, err)
+	if !strings.Contains(text, "pool.snapshottask.create:") || !strings.Contains(text, "boom") {
+		t.Errorf("error text = %q, want the wrapped method name", text)
+	}
+	if n := calls.createCalls(); n != 1 {
+		t.Errorf("create calls = %d, want 1", n)
+	}
+}
+
+func TestSnapshotTaskCreate_RegistrationMode(t *testing.T) {
+	mock, _ := newSnapshotTaskCreateCaller(`[]`, createdSnapshotTask, nil)
+
+	if names := listTools(t, mock, true); slices.Contains(names, "truenas_snapshot_task_create") {
+		t.Error("read-only server registered truenas_snapshot_task_create")
+	}
+	if names := listTools(t, mock, false); !slices.Contains(names, "truenas_snapshot_task_create") {
+		t.Error("server with writes did not register truenas_snapshot_task_create")
+	}
+
+	// A read-only server must not run the tool at all.
+	result, err := callTool(t, mock, true, "truenas_snapshot_task_create", map[string]any{
+		"dataset":        "tank/data",
+		"lifetime_value": float64(1),
+		"lifetime_unit":  "DAY",
+		"schedule":       map[string]any{"minute": "0", "hour": "0"},
+	})
+	_ = toolError(t, result, err)
 }

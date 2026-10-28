@@ -51,6 +51,17 @@ func optionalBool(req *mcp.CallToolRequest, field string) bool {
 	return v
 }
 
+// boolDefault returns the boolean field, or def when the key is absent or is not
+// a boolean. optionalBool cannot express a default of true, because it returns
+// false for an absent key.
+func boolDefault(req *mcp.CallToolRequest, field string, def bool) bool {
+	m := parseArgs(req)
+	if v, ok := m[field].(bool); ok {
+		return v
+	}
+	return def
+}
+
 func optionalSlice(req *mcp.CallToolRequest, field string) []any {
 	m := parseArgs(req)
 	v, _ := m[field].([]any)

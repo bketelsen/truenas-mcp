@@ -121,3 +121,23 @@ func TestOptionalFloat64_absent(t *testing.T) {
 		t.Fatal("expected ok=false for absent field")
 	}
 }
+
+func TestBoolDefault_present(t *testing.T) {
+	req := makeReq(t, map[string]any{"enabled": false, "allow_empty": true})
+	if boolDefault(req, "enabled", true) {
+		t.Error("explicit false must win over a default of true")
+	}
+	if !boolDefault(req, "allow_empty", false) {
+		t.Error("explicit true must win over a default of false")
+	}
+}
+
+func TestBoolDefault_absent(t *testing.T) {
+	req := makeReq(t, map[string]any{})
+	if !boolDefault(req, "enabled", true) {
+		t.Error("absent key must return the default true")
+	}
+	if boolDefault(req, "enabled", false) {
+		t.Error("absent key must return the default false")
+	}
+}
