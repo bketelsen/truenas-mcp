@@ -57,6 +57,15 @@ Connection recovery is implemented in `truenas/client.go`: probe before operatio
 
 `make build` writes `build/truenas-mcp` with version metadata from `git describe` injected into the `version` package via ldflags; never hardcode a version. `make verify` is the credential-free gate (tidy diff, vet, gofmt, pinned golangci-lint from `mise.toml`, tests). Releases: `make bump` tags `svu next` and pushes; `.github/workflows/release.yml` runs GoReleaser Pro; `snapshot.yml` republishes the `dev` pre-release after each green `CI` on `main`. Commit messages must follow Conventional Commits because svu and the changelog depend on them. Details in `yeti/OVERVIEW.md` under "Release Pipeline".
 
+## Releases and dependencies
+
+- Tag format: `v1.2.3` (stable series `v0.x`). `dev` is the rolling nightly pre-release tag from `snapshot.yml`; skip it in release checks.
+- How a release starts: a tag push runs `.github/workflows/release.yml` (workflow `goreleaser`, GoReleaser Pro with `.goreleaser.yaml`, then build-provenance attestation). `make bump` makes and pushes the tag.
+- Who tags: Brian. Agents never run `make bump`, never tag, push tags or release.
+- Version rule: `svu next` (Conventional Commits since the last `v*` tag).
+- Internal dependencies: none. `go.mod` has no `github.com/frostyard/...` or `github.com/bketelsen/...` module. Tool pins live in `mise.toml` (`golangci-lint`) and `go.mod` (Go).
+- Who uses this repository: no frostyard or bketelsen repository imports it (module path `truenas-mcp`). It ships as the `truenas-mcp` binary.
+
 **update documentation** After any change to source code, update relevant documentation in CLAUDE.md, README.md and the yeti/ folder. A task is not complete without reviewing and updating relevant documentation.
 
 **yeti/ directory** The `yeti/` directory contains documentation written for AI consumption and context enhancement, not primarily for humans. Jobs like `doc-maintainer` and `issue-worker` instruct the AI to read `yeti/OVERVIEW.md` and related files for codebase context before performing tasks. Write content in this directory to be maximally useful to an AI agent understanding the codebase — detailed architecture, patterns, and decision rationale rather than user-facing guides.
