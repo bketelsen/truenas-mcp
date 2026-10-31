@@ -2,7 +2,7 @@
 
 Complete catalog of MCP tools exposed by truenas-mcp. Tools marked with **[write]** are excluded by default and are registered only with `--enable-writes` or `TRUENAS_ENABLE_WRITES=true`.
 
-Every tool carries MCP annotations (`Title`, `ReadOnlyHint`, `DestructiveHint`, `IdempotentHint`, `OpenWorldHint: false`) defined next to its `mcp.Tool` literal; `wantToolHints` in `server/annotations_test.go` is the authoritative classification table. All non-**[write]** tools are `readOnlyHint: true`. Destructive writes (`destructiveHint: true`): `truenas_dataset_delete`, `truenas_snapshot_delete`, `truenas_smb_delete`, `truenas_nfs_delete`, `truenas_app_configure`, `truenas_app_delete`, `truenas_app_update`, `truenas_app_update_all`, `truenas_snapshot_task_create`. Every other **[write]** tool is `destructiveHint: false`.
+Every tool carries MCP annotations (`Title`, `ReadOnlyHint`, `DestructiveHint`, `IdempotentHint`, `OpenWorldHint: false`) defined next to its `mcp.Tool` literal; `wantToolHints` in `server/annotations_test.go` is the authoritative classification table. All non-**[write]** tools are `readOnlyHint: true`. Destructive writes (`destructiveHint: true`): `truenas_dataset_delete`, `truenas_snapshot_delete`, `truenas_smb_delete`, `truenas_nfs_delete`, `truenas_app_configure`, `truenas_app_compose_update`, `truenas_app_delete`, `truenas_app_update`, `truenas_app_update_all`, `truenas_snapshot_task_create`. Every other **[write]** tool is `destructiveHint: false`.
 
 ## System Tools (`tools_system.go`)
 
@@ -272,6 +272,27 @@ Delete an installed app and return the job ID. Destructive and irreversible.
 - Returns: `{ "name", "job_id", "remove_ix_volumes" }`; with `dry_run`: `{ "dry_run": true, "name", "method": "app.delete", "options", "app": {"state", "version", "custom_app"}, "effects": [...] }`
 - Annotations: destructive, and idempotent because a second call finds no app and changes nothing (like `truenas_dataset_delete`).
 - `force_remove_custom_app` is always sent as `false`; the tool has no parameter to change it.
+
+## Custom App Compose Tool (`tools_app_compose.go`)
+
+### `truenas_app_compose_update` **[write]**
+Replace the whole compose file of a custom (compose) app and wait for the TrueNAS job. Custom apps only: `truenas_app_configure` still refuses them, and this tool refuses a catalog app with an error that names `truenas_app_configure`.
+- Parameters:
+  - `name` (string, required) — custom app name
+  - `compose` (string, required) — the complete new compose file as YAML text; empty or whitespace-only text is refused
+  - `dry_run` (boolean, optional, default false) — return the current compose, the proposed compose, the diff and `current_sha256`; do not call `app.update`
+  - `expected_sha256` (string) — required when `dry_run` is false; must equal the `current_sha256` the dry run returned
+  - `timeout_seconds` (number, optional, default 600) — how long to wait for the job; only 30 to 1800 is accepted, anything else is refused before any middleware call
+- APIs: `app.query` with filter `[ ["name", "=", name] ]` (existence and `custom_app` check), `app.config` (current compose), then `app.update(name, {"custom_compose_config": <object>})`, then `core.get_jobs` with filter `[ ["id", "=", jobID] ]` in a poll loop
+- Role: `app.update` needs `APPS_WRITE`.
+- Validation of `compose`, in this order: parse with `go.yaml.in/yaml/v3`; exactly 1 YAML document (more is refused); the top level must be a mapping; every mapping key at every depth must be a string (an integer key such as `8080:` is refused); a top-level `services` key must exist and must be a mapping with at least 1 entry; every service value must be a mapping. The value is then normalized through `json.Marshal` + `json.Unmarshal` into `map[string]any`, and that object — not the YAML text — is what the diff, the hash and `app.update` use, so the appliance gets exactly what the caller saw.
+- Canonical form: `canonicalYAML` in `tools_app_compose.go` renders both the stored compose and the proposal with a `yaml.v3` encoder, 2-space indent and sorted map keys. Equal content always gives equal text, so the identical check and the hash cover content only, not key order or YAML style.
+- Flow: (1) validate; (2) read the stored compose and render both sides; (3) `current_sha256` = hex SHA-256 of the canonical current text; (4) diff with `unifiedDiff` from `server/linediff.go` (headers `--- current` and `+++ proposed`, 3 context lines per hunk, LCS-based, no diff dependency); (5) equal texts are refused as `identical`; (6) `dry_run` returns `{ name, dry_run: true, current_sha256, current_compose, proposed_compose, diff }`; (7) a write without `expected_sha256`, or with one that differs from `current_sha256`, is refused and names the current hash, so the caller must preview first; (8) `app.update` is called exactly once.
+- No replay: a transport error from `app.update` returns the error plus a warning that the job state is unknown, that `truenas_jobs_list` must be checked, and that the tool must not be run again blindly. This follows the no-replay rule in `truenas/client.go` (the middleware keeps no prior compose).
+- Job wait: `core.get_jobs` is polled every `jobPollInterval` (2 seconds; a package variable so tests use milliseconds) until `SUCCESS`, `FAILED` or `ABORTED`, the deadline, or context cancellation. A failed poll is a read and is retried at the next interval; its error text is kept for the final message. `composeJobWait`, a package variable, replaces `timeout_seconds` in tests, because the smallest allowed timeout is 30 seconds.
+- Returns on `SUCCESS`: `{ "name", "job_id", "state": "SUCCESS", "previous_sha256", "previous_compose", "diff" }`. A `FAILED` or `ABORTED` job returns a tool error with the job ID, the state and the job's `error` text, and says that the previous compose is in the diff for a rollback. A timeout or cancellation returns a tool error with the job ID and the last state, and says the job can still run, so `truenas_jobs_list` must be checked and the tool must not be re-run.
+- Secrets: like `truenas_app_config`, the result carries the compose itself, which can hold plaintext secrets such as environment values. The tool description says so.
+- Annotations: `destructiveHint: true` (the stored compose is replaced whole and TrueNAS keeps no copy), `idempotentHint: false` (every accepted call starts a new job), `openWorldHint: false`.
 
 ## Job Tools (`tools_reports.go`)
 

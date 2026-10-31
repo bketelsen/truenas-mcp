@@ -37,6 +37,7 @@ func New(client truenas.Caller, readOnly bool) *mcp.Server {
 		registerAlertWriteTools(s, client)
 		registerAppWriteTools(s, client)
 		registerAppConfigureTools(s, client)
+		registerAppComposeTools(s, client)
 	}
 
 	return s

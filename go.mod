@@ -7,6 +7,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.4.0
 	github.com/spf13/cobra v1.10.2
 	github.com/truenas/api_client_golang v0.0.0-20250820184128-fc6edc0b6ebe
+	go.yaml.in/yaml/v3 v3.0.4
 )
 
 require (

@@ -34,6 +34,7 @@ var writeToolNames = []string{
 	"truenas_app_update",
 	"truenas_app_update_all",
 	"truenas_app_configure",
+	"truenas_app_compose_update",
 	"truenas_app_delete",
 }
 
