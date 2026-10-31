@@ -172,7 +172,7 @@ Every tool carries [MCP tool annotations](https://modelcontextprotocol.io/specif
 | `truenas_smb_delete` | Removes the share's settings and cuts off clients (the data stays) |
 | `truenas_nfs_delete` | Removes the export's settings and cuts off clients (the data stays) |
 | `truenas_app_configure` | Overwrites stored configuration values; TrueNAS keeps no prior copy |
-| `truenas_app_compose_update` | Replaces the custom app's stored compose whole; TrueNAS keeps no prior copy, so the previous compose reaches the caller only through the dry-run diff. Needs the `APPS_WRITE` role |
+| `truenas_app_compose_update` | Replaces the custom app's stored compose whole; TrueNAS keeps no prior copy, so the full previous compose is `current_compose` of the dry run and `previous_compose` of a successful write. Needs the `APPS_WRITE` role |
 | `truenas_app_delete` | Deletes the app, its containers, docker volumes and images; with `remove_ix_volumes` also its ix-volumes and their snapshots. Host paths stay |
 | `truenas_app_update` | The upgrade snapshots the app's host-path datasets as well as its ix-volumes, but TrueNAS's app rollback restores only the ix-volumes. Undoing changes on host paths means rolling a dataset back by hand, which also reverts anything else stored in it (see [App updates and recovery](#app-updates-and-recovery)) |
 | `truenas_app_update_all` | The same as `truenas_app_update`, for every app with an update at once |

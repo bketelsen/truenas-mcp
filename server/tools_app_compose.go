@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -113,14 +115,20 @@ func registerAppComposeTools(s *mcp.Server, client truenas.Caller) {
 			return nil, err
 		}
 
-		// 3. Read the stored compose.
+		// 3. Read the stored compose. Numbers keep their exact form: a float64
+		// would turn 9007199254740993 into 9007199254740992.
 		result, err = client.Call("app.config", name)
 		if err != nil {
 			return nil, fmt.Errorf("app.config: %w", err)
 		}
 		var current map[string]any
-		if err := json.Unmarshal(result, &current); err != nil {
+		decoder := json.NewDecoder(bytes.NewReader(result))
+		decoder.UseNumber()
+		if err := decoder.Decode(&current); err != nil {
 			return nil, fmt.Errorf("parsing app.config: %w", err)
+		}
+		if err := convertJSONNumbers(current); err != nil {
+			return nil, fmt.Errorf("the stored compose of app %q has a number this tool cannot carry exactly, so nothing was sent: %w", name, err)
 		}
 
 		// 4. Canonical text and hash of the stored compose. The same renderer
@@ -190,7 +198,7 @@ func registerAppComposeTools(s *mcp.Server, client truenas.Caller) {
 				"diff":             diff,
 			})
 		case "FAILED", "ABORTED":
-			return nil, fmt.Errorf("app.update job %v ended %s: %s; the previous compose is in the diff, so a rollback can send it back unchanged", jobID, outcome.State, jobErrorText(outcome.Error))
+			return nil, fmt.Errorf("app.update job %v ended %s: %s; to roll back, send the complete previous compose back with this tool: it is current_compose of the dry run, and previous_compose of a successful write", jobID, outcome.State, jobErrorText(outcome.Error))
 		}
 
 		if outcome.Cancelled {
@@ -229,12 +237,27 @@ type composeJob struct {
 }
 
 // waitForComposeJob polls core.get_jobs until the job reaches a final state,
-// the wait runs out, or the request is cancelled. A failed poll is a read, so
+// the wait runs out, or the request is cancelled. The context and the deadline
+// are checked before each poll, so no poll starts after either one, and the wait
+// between polls is never longer than the time left. A failed poll is a read, so
 // it is tried again at the next interval; its error is kept for the report.
+//
+// truenas.Caller takes no context, so a poll that is already running cannot be
+// stopped. One such call is bounded by the client's 30-second call timeout, not
+// by the wait, so a cancelled request can return up to that long after a poll
+// started.
 func waitForComposeJob(ctx context.Context, client truenas.Caller, jobID int64, wait time.Duration) composeJob {
 	deadline := time.Now().Add(wait)
 	outcome := composeJob{State: "UNKNOWN"}
 	for {
+		if ctx.Err() != nil {
+			outcome.Cancelled = true
+			return outcome
+		}
+		if time.Until(deadline) <= 0 {
+			return outcome
+		}
+
 		state, errText, pollErr := pollComposeJob(client, jobID)
 		if pollErr != nil {
 			outcome.PollErr = pollErr
@@ -245,10 +268,12 @@ func waitForComposeJob(ctx context.Context, client truenas.Caller, jobID int64, 
 				return outcome
 			}
 		}
-		if !time.Now().Before(deadline) {
+
+		pause := min(jobPollInterval, time.Until(deadline))
+		if pause <= 0 {
 			return outcome
 		}
-		timer := time.NewTimer(jobPollInterval)
+		timer := time.NewTimer(pause)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -347,7 +372,8 @@ func parseCompose(text string) (map[string]any, error) {
 		return nil, fmt.Errorf("compose %q must be a mapping with at least 1 service", "services")
 	}
 	for i := 0; i+1 < len(services.Content); i += 2 {
-		if resolveAlias(services.Content[i+1]).Kind != yaml.MappingNode {
+		service := resolveAlias(services.Content[i+1])
+		if service == nil || service.Kind != yaml.MappingNode {
 			return nil, fmt.Errorf("compose service %q must be a mapping", services.Content[i].Value)
 		}
 	}
@@ -361,45 +387,133 @@ func parseCompose(text string) (map[string]any, error) {
 		return nil, fmt.Errorf("compose cannot be converted to the JSON the appliance takes: %w", err)
 	}
 	var object map[string]any
-	if err := json.Unmarshal(encoded, &object); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.UseNumber()
+	if err := decoder.Decode(&object); err != nil {
 		return nil, fmt.Errorf("parsing the JSON form of the compose: %w", err)
+	}
+	if err := convertJSONNumbers(object); err != nil {
+		return nil, err
 	}
 	return object, nil
 }
 
-// checkComposeKeys refuses a mapping key that is not a string, at any depth. The
-// JSON form the appliance takes has string keys only.
-func checkComposeKeys(node *yaml.Node) error {
-	if node == nil {
+// maxExactFloat is 2^53. Every integer below it is exact in a float64; an
+// integer-valued float64 at or above it may stand for a neighbour.
+const maxExactFloat = float64(1 << 53)
+
+// numberValue converts one JSON number into a Go value that carries it exactly:
+// int64 for an integer literal, float64 for anything else. A JSON tree decoded
+// with float64 alone loses digits above 2^53, and the tool must send and hash
+// the numbers the caller wrote.
+func numberValue(number json.Number) (any, error) {
+	text := number.String()
+	if !strings.ContainsAny(text, ".eE") {
+		integer, err := strconv.ParseInt(text, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("the number %s does not fit a 64-bit integer", text)
+		}
+		return integer, nil
+	}
+	float, err := strconv.ParseFloat(text, 64)
+	if err != nil {
+		return nil, fmt.Errorf("the number %s cannot be read as a 64-bit float", text)
+	}
+	if math.Trunc(float) == float && math.Abs(float) >= maxExactFloat {
+		return nil, fmt.Errorf("the number %s is an integer of 2^53 or more written as a float, so a 64-bit float cannot hold it exactly", text)
+	}
+	return float, nil
+}
+
+// convertJSONNumbers replaces every json.Number in a decoded JSON tree with the
+// value numberValue returns, in place. Maps and slices are references, so the
+// caller sees the converted tree.
+func convertJSONNumbers(value any) error {
+	switch tree := value.(type) {
+	case map[string]any:
+		for key, item := range tree {
+			converted, err := convertJSONItem(item)
+			if err != nil {
+				return err
+			}
+			tree[key] = converted
+		}
+	case []any:
+		for i, item := range tree {
+			converted, err := convertJSONItem(item)
+			if err != nil {
+				return err
+			}
+			tree[i] = converted
+		}
+	}
+	return nil
+}
+
+// convertJSONItem converts one value of a decoded JSON tree.
+func convertJSONItem(value any) (any, error) {
+	switch item := value.(type) {
+	case json.Number:
+		return numberValue(item)
+	case map[string]any, []any:
+		return value, convertJSONNumbers(value)
+	}
+	return value, nil
+}
+
+// checkComposeKeys refuses a mapping key that is not a string, at any depth, and
+// a cyclic alias. The JSON form the appliance takes has string keys only, and an
+// anchor that contains itself has no finite form at all.
+func checkComposeKeys(root *yaml.Node) error {
+	return checkNodeKeys(root, map[*yaml.Node]bool{}, map[*yaml.Node]bool{})
+}
+
+// checkNodeKeys walks a node tree. onPath holds the nodes on the current
+// recursion path, so an alias that leads back to one of them is refused as a
+// cycle. done holds the nodes already checked: an anchor shared by many aliases
+// is checked once, which keeps the walk linear in the document ("billion
+// laughs" nests these aliases, and the yaml decoder's own aliasing limit may
+// refuse such a document before this walk sees it).
+func checkNodeKeys(node *yaml.Node, onPath, done map[*yaml.Node]bool) error {
+	if node == nil || done[node] {
 		return nil
 	}
+	if onPath[node] {
+		return fmt.Errorf("compose has a cyclic alias at line %d: an anchor contains itself, so the compose has no finite form", node.Line)
+	}
+	onPath[node] = true
+	err := checkChildKeys(node, onPath, done)
+	delete(onPath, node)
+	if err != nil {
+		return err
+	}
+	done[node] = true
+	return nil
+}
+
+// checkChildKeys checks the children of one node and recurses into them.
+func checkChildKeys(node *yaml.Node, onPath, done map[*yaml.Node]bool) error {
 	switch node.Kind {
 	case yaml.MappingNode:
 		for i := 0; i+1 < len(node.Content); i += 2 {
 			key := node.Content[i]
 			// "<<" (tag !!merge) pulls an anchored mapping in; the decoder
 			// resolves it, and the merged keys are checked where they are defined.
-			if key.Kind == yaml.ScalarNode && key.Tag == "!!merge" {
-				if err := checkComposeKeys(node.Content[i+1]); err != nil {
-					return err
-				}
-				continue
-			}
-			if key.Kind != yaml.ScalarNode || key.Tag != "!!str" {
+			if key.Kind != yaml.ScalarNode || (key.Tag != "!!str" && key.Tag != "!!merge") {
 				return fmt.Errorf("compose keys must be strings: line %d has a %s key %q", key.Line, yamlKind(key), key.Value)
 			}
-			if err := checkComposeKeys(node.Content[i+1]); err != nil {
+			if err := checkNodeKeys(node.Content[i+1], onPath, done); err != nil {
 				return err
 			}
 		}
 	case yaml.SequenceNode, yaml.DocumentNode:
 		for _, child := range node.Content {
-			if err := checkComposeKeys(child); err != nil {
+			if err := checkNodeKeys(child, onPath, done); err != nil {
 				return err
 			}
 		}
 	case yaml.AliasNode:
-		return checkComposeKeys(node.Alias)
+		return checkNodeKeys(node.Alias, onPath, done)
 	}
 	return nil
 }
@@ -417,9 +531,16 @@ func mappingValue(node *yaml.Node, key string) *yaml.Node {
 	return nil
 }
 
-// resolveAlias follows an anchor alias to the node it names.
+// resolveAlias follows an anchor alias to the node it names. It returns nil for a
+// cycle of aliases; checkComposeKeys refuses such a compose before this runs, so
+// the nil only keeps a caller from looping or panicking.
 func resolveAlias(node *yaml.Node) *yaml.Node {
+	seen := map[*yaml.Node]bool{}
 	for node != nil && node.Kind == yaml.AliasNode && node.Alias != nil {
+		if seen[node] {
+			return nil
+		}
+		seen[node] = true
 		node = node.Alias
 	}
 	return node

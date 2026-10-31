@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -64,6 +65,7 @@ func composeTestProposalObject() map[string]any {
 type composeMockOptions struct {
 	notFound       bool
 	catalogApp     bool
+	stored         string   // the app.config result; empty means composeTestCurrent
 	jobStates      []string // states core.get_jobs reports, in order; the last one repeats
 	jobError       string
 	pollErrorFirst bool
@@ -86,6 +88,10 @@ func newComposeHarness(t *testing.T, opts composeMockOptions) (*mockCaller, *com
 	if len(states) == 0 {
 		states = []string{"SUCCESS"}
 	}
+	stored := opts.stored
+	if stored == "" {
+		stored = composeTestCurrent
+	}
 
 	mock := &mockCaller{
 		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
@@ -104,7 +110,7 @@ func newComposeHarness(t *testing.T, opts composeMockOptions) (*mockCaller, *com
 				if len(params) != 1 || params[0] != composeTestApp {
 					t.Errorf("app.config params = %v", params)
 				}
-				return json.RawMessage(composeTestCurrent), nil
+				return json.RawMessage(stored), nil
 			case "app.update":
 				if len(params) != 2 || params[0] != composeTestApp {
 					t.Errorf("app.update params = %v", params)
@@ -445,7 +451,7 @@ func TestAppCompose_JobFailed(t *testing.T) {
 		t.Fatal("expected a job failure error")
 	}
 	msg := toolErrorText(t, result, err)
-	for _, want := range []string{"4242", "FAILED", "unknown service volume", "diff"} {
+	for _, want := range []string{"4242", "FAILED", "unknown service volume", "current_compose", "roll back"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("error %q does not contain %q", msg, want)
 		}
@@ -470,7 +476,7 @@ func TestAppCompose_JobAborted(t *testing.T) {
 		t.Fatal("expected an aborted job error")
 	}
 	msg := toolErrorText(t, result, err)
-	for _, want := range []string{"4242", "ABORTED", "diff"} {
+	for _, want := range []string{"4242", "ABORTED", "current_compose", "roll back"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("error %q does not contain %q", msg, want)
 		}
@@ -606,5 +612,299 @@ func TestAppCompose_MergeKeyAccepted(t *testing.T) {
 	}
 	if _, err := parseCompose("x-base: &base\n  1: a\nservices:\n  web:\n    <<: *base\n"); err == nil {
 		t.Error("a non-string key inside a merged anchor must still be refused")
+	}
+}
+
+func TestAppCompose_CyclicAliasRefused(t *testing.T) {
+	// The anchor "loop" contains an alias to itself. A walk that follows
+	// node.Alias without cycle detection recurses until the stack overflows.
+	cyclic := "services:\n  web:\n    image: nginx\n    x-loop: &loop [*loop]\n"
+
+	result, err := callTool(t, newComposeHarnessFor(t, composeMockOptions{}), false,
+		"truenas_app_compose_update", map[string]any{
+			"name": composeTestApp, "compose": cyclic, "dry_run": true,
+		})
+	if err == nil && !result.IsError {
+		t.Fatal("expected a refusal for a cyclic alias")
+	}
+	msg := toolErrorText(t, result, err)
+	if !strings.Contains(msg, "cyclic alias") {
+		t.Errorf("error %q does not name the cyclic alias", msg)
+	}
+
+	mock, h := newComposeHarness(t, composeMockOptions{})
+	result, err = callTool(t, mock, false, "truenas_app_compose_update", map[string]any{
+		"name": composeTestApp, "compose": cyclic, "dry_run": true,
+	})
+	if err == nil && !result.IsError {
+		t.Fatal("expected a refusal for a cyclic alias")
+	}
+	if h.configCalls != 0 || len(h.updates) != 0 {
+		t.Error("a cyclic compose must be refused before app.config, and must never reach app.update")
+	}
+}
+
+// newComposeHarnessFor returns only the mock of a fresh harness.
+func newComposeHarnessFor(t *testing.T, opts composeMockOptions) *mockCaller {
+	t.Helper()
+	mock, _ := newComposeHarness(t, opts)
+	return mock
+}
+
+func TestAppCompose_SharedAliasesFinishFast(t *testing.T) {
+	// 9 levels, each a list of 9 aliases to the level below: 9^9 leaves if the
+	// walk expands every alias instead of checking each anchor once.
+	var doc strings.Builder
+	doc.WriteString("l0: &l0 [a, a, a, a, a, a, a, a, a]\n")
+	for level := 1; level <= 9; level++ {
+		fmt.Fprintf(&doc, "l%d: &l%d [", level, level)
+		for i := 0; i < 9; i++ {
+			if i > 0 {
+				doc.WriteString(", ")
+			}
+			fmt.Fprintf(&doc, "*l%d", level-1)
+		}
+		doc.WriteString("]\n")
+	}
+	doc.WriteString("services:\n  web:\n    image: nginx\n")
+
+	mock, h := newComposeHarness(t, composeMockOptions{})
+	start := time.Now()
+	result, err := callTool(t, mock, false, "truenas_app_compose_update", map[string]any{
+		"name": composeTestApp, "compose": doc.String(), "dry_run": true,
+	})
+	elapsed := time.Since(start)
+
+	if err == nil && !result.IsError {
+		t.Fatal("expected a refusal: the yaml decoder caps alias expansion")
+	}
+	if elapsed > 5*time.Second {
+		t.Errorf("the shared-alias document took %s, want far less", elapsed)
+	}
+	if h.configCalls != 0 || len(h.updates) != 0 {
+		t.Error("a refused compose must not reach app.config or app.update")
+	}
+}
+
+func TestAppCompose_BigIntegerPreserved(t *testing.T) {
+	const big = "9007199254740993" // 2^53 + 1: a float64 reads it as 2^53
+	fastComposePolling(t)
+	mock, h := newComposeHarness(t, composeMockOptions{
+		stored: `{"services":{"web":{"image":"nginx:1","replicas":` + big + `}}}`,
+	})
+
+	preview, err := callTool(t, mock, false, "truenas_app_compose_update", map[string]any{
+		"name":    composeTestApp,
+		"compose": "services:\n  web:\n    image: nginx:2\n    replicas: " + big + "\n",
+		"dry_run": true,
+	})
+	if err != nil || preview.IsError {
+		t.Fatalf("dry run failed: %v %s", err, resultText(t, preview))
+	}
+	previewJSON := resultJSON(t, resultText(t, preview))
+	current, _ := previewJSON["current_compose"].(string)
+	if !strings.Contains(current, big) {
+		t.Errorf("current_compose lost digits:\n%s", current)
+	}
+	if strings.Contains(current, "9007199254740992") {
+		t.Errorf("current_compose rounded 2^53+1 down:\n%s", current)
+	}
+
+	hash, _ := previewJSON["current_sha256"].(string)
+	result, err := callTool(t, mock, false, "truenas_app_compose_update", map[string]any{
+		"name":            composeTestApp,
+		"compose":         "services:\n  web:\n    image: nginx:2\n    replicas: " + big + "\n",
+		"expected_sha256": hash,
+	})
+	if err != nil || result.IsError {
+		t.Fatalf("write failed: %v %s", err, resultText(t, result))
+	}
+	if len(h.updates) != 1 {
+		t.Fatalf("app.update called %d times, want 1", len(h.updates))
+	}
+	payload, err := json.Marshal(h.updates[0])
+	if err != nil {
+		t.Fatalf("marshalling the app.update payload: %v", err)
+	}
+	if !strings.Contains(string(payload), `"replicas":`+big) {
+		t.Errorf("app.update payload lost digits: %s", payload)
+	}
+}
+
+func TestAppCompose_HashDistinguishesBigIntegers(t *testing.T) {
+	hashes := make(map[string]string, 2)
+	for _, big := range []string{"9007199254740992", "9007199254740993"} {
+		mock, _ := newComposeHarness(t, composeMockOptions{
+			stored: `{"services":{"web":{"image":"nginx:1","replicas":` + big + `}}}`,
+		})
+		result, err := callTool(t, mock, false, "truenas_app_compose_update", map[string]any{
+			"name":    composeTestApp,
+			"compose": "services:\n  web:\n    image: nginx:2\n    replicas: " + big + "\n",
+			"dry_run": true,
+		})
+		if err != nil || result.IsError {
+			t.Fatalf("dry run failed for %s: %v", big, err)
+		}
+		hashes[big], _ = resultJSON(t, resultText(t, result))["current_sha256"].(string)
+	}
+	if hashes["9007199254740992"] == "" || hashes["9007199254740992"] == hashes["9007199254740993"] {
+		t.Errorf("the two stored composes hash the same: %v", hashes)
+	}
+}
+
+func TestAppCompose_ProposalNumberRefusals(t *testing.T) {
+	cases := []struct {
+		name    string
+		compose string
+		want    []string
+	}{
+		{
+			name:    "integer above int64",
+			compose: "services:\n  web:\n    image: a\n    big: 9223372036854775808\n",
+			want:    []string{"9223372036854775808", "64-bit integer"},
+		},
+		{
+			name:    "integer written as a float above 2^53",
+			compose: "services:\n  web:\n    image: a\n    big: 1e24\n",
+			want:    []string{"2^53", "cannot hold it exactly"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mock, h := newComposeHarness(t, composeMockOptions{})
+			result, err := callTool(t, mock, false, "truenas_app_compose_update", map[string]any{
+				"name": composeTestApp, "compose": tc.compose, "dry_run": true,
+			})
+			if err == nil && !result.IsError {
+				t.Fatal("expected the number to be refused")
+			}
+			msg := toolErrorText(t, result, err)
+			for _, want := range tc.want {
+				if !strings.Contains(msg, want) {
+					t.Errorf("error %q does not contain %q", msg, want)
+				}
+			}
+			if h.configCalls != 0 || len(h.updates) != 0 {
+				t.Error("a refused proposal must not reach app.config or app.update")
+			}
+		})
+	}
+}
+
+func TestAppCompose_StoredNumberRefused(t *testing.T) {
+	// app.config sends 1e24: an integer-valued float64 above 2^53, which the
+	// tool cannot carry exactly.
+	mock, h := newComposeHarness(t, composeMockOptions{
+		stored: `{"services":{"web":{"image":"nginx:1","value":1e24}}}`,
+	})
+	result, err := callTool(t, mock, false, "truenas_app_compose_update", map[string]any{
+		"name": composeTestApp, "compose": composeTestProposal, "dry_run": true,
+	})
+	if err == nil && !result.IsError {
+		t.Fatal("expected the stored number to be refused")
+	}
+	msg := toolErrorText(t, result, err)
+	for _, want := range []string{"stored compose", "cannot carry exactly"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error %q does not contain %q", msg, want)
+		}
+	}
+	if len(h.updates) != 0 {
+		t.Error("a refused stored compose must not reach app.update")
+	}
+}
+
+// pollCountingMock answers core.get_jobs with one state and counts the polls.
+func pollCountingMock(t *testing.T, state string, onPoll func()) (*mockCaller, *int) {
+	t.Helper()
+	polls := new(int)
+	mock := &mockCaller{CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+		if method != "core.get_jobs" {
+			t.Errorf("unexpected method %q", method)
+		}
+		*polls++
+		if onPoll != nil {
+			onPoll()
+		}
+		return json.RawMessage(`[{"id":1,"state":"` + state + `"}]`), nil
+	}}
+	return mock, polls
+}
+
+func TestWaitForComposeJob_CancelledBeforeFirstPoll(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	mock, polls := pollCountingMock(t, "RUNNING", nil)
+	outcome := waitForComposeJob(ctx, mock, 1, time.Minute)
+
+	if !outcome.Cancelled {
+		t.Error("a cancelled context must end the wait as cancelled")
+	}
+	if *polls != 0 {
+		t.Errorf("core.get_jobs polled %d times after cancellation, want 0", *polls)
+	}
+}
+
+func TestWaitForComposeJob_CancelledBetweenPolls(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	// The cancel lands while the first poll runs; the wait between polls must
+	// then end at once instead of sleeping out the interval.
+	mock, polls := pollCountingMock(t, "RUNNING", cancel)
+	start := time.Now()
+	outcome := waitForComposeJob(ctx, mock, 1, time.Minute)
+	elapsed := time.Since(start)
+
+	if !outcome.Cancelled {
+		t.Error("the wait must report the cancellation")
+	}
+	if *polls != 1 {
+		t.Errorf("core.get_jobs polled %d times, want 1", *polls)
+	}
+	if elapsed > time.Second {
+		t.Errorf("the wait took %s after a cancel, want an immediate return", elapsed)
+	}
+}
+
+func TestWaitForComposeJob_NoPollAfterDeadline(t *testing.T) {
+	old := jobPollInterval
+	jobPollInterval = time.Hour // longer than the whole wait
+	t.Cleanup(func() { jobPollInterval = old })
+
+	mock, polls := pollCountingMock(t, "RUNNING", nil)
+	start := time.Now()
+	outcome := waitForComposeJob(t.Context(), mock, 1, 20*time.Millisecond)
+	elapsed := time.Since(start)
+
+	if outcome.Cancelled {
+		t.Error("a timeout is not a cancellation")
+	}
+	if outcome.State != "RUNNING" {
+		t.Errorf("last state = %q, want RUNNING", outcome.State)
+	}
+	if *polls != 1 {
+		t.Errorf("core.get_jobs polled %d times, want 1: the wait must not poll after the deadline", *polls)
+	}
+	if elapsed > 5*time.Second {
+		t.Errorf("the wait took %s, want about 20ms", elapsed)
+	}
+}
+
+func TestWaitForComposeJob_PollsUntilDeadline(t *testing.T) {
+	old := jobPollInterval
+	jobPollInterval = 5 * time.Millisecond
+	t.Cleanup(func() { jobPollInterval = old })
+
+	mock, polls := pollCountingMock(t, "RUNNING", nil)
+	outcome := waitForComposeJob(t.Context(), mock, 1, 50*time.Millisecond)
+
+	if outcome.Cancelled {
+		t.Error("a timeout is not a cancellation")
+	}
+	// Polls are at most one interval apart, so 50ms allows at most 11 polls.
+	if *polls < 1 || *polls > 11 {
+		t.Errorf("core.get_jobs polled %d times in 50ms at a 5ms interval", *polls)
 	}
 }
