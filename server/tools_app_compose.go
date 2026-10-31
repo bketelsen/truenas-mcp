@@ -236,16 +236,26 @@ type composeJob struct {
 	Cancelled bool   // the request context ended before the job did
 }
 
+// pollResult is what one core.get_jobs poll found; it comes back from the
+// goroutine that runs the call.
+type pollResult struct {
+	state   string
+	errText string
+	err     error
+}
+
 // waitForComposeJob polls core.get_jobs until the job reaches a final state,
 // the wait runs out, or the request is cancelled. The context and the deadline
 // are checked before each poll, so no poll starts after either one, and the wait
 // between polls is never longer than the time left. A failed poll is a read, so
 // it is tried again at the next interval; its error is kept for the report.
 //
-// truenas.Caller takes no context, so a poll that is already running cannot be
-// stopped. One such call is bounded by the client's 30-second call timeout, not
-// by the wait, so a cancelled request can return up to that long after a poll
-// started.
+// truenas.Caller takes no context, so a poll call cannot be stopped. Each poll
+// therefore runs in its own goroutine and reports to a channel with room for 1
+// result: the wait can return at the deadline or on a cancel without waiting for
+// the call, and the goroutine then finishes in the background and its result is
+// dropped. An abandoned poll is a read only; app.update is never called again
+// (the no-replay rule in truenas/client.go).
 func waitForComposeJob(ctx context.Context, client truenas.Caller, jobID int64, wait time.Duration) composeJob {
 	deadline := time.Now().Add(wait)
 	outcome := composeJob{State: "UNKNOWN"}
@@ -254,26 +264,43 @@ func waitForComposeJob(ctx context.Context, client truenas.Caller, jobID int64, 
 			outcome.Cancelled = true
 			return outcome
 		}
-		if time.Until(deadline) <= 0 {
+		left := time.Until(deadline)
+		if left <= 0 {
 			return outcome
 		}
 
-		state, errText, pollErr := pollComposeJob(client, jobID)
-		if pollErr != nil {
-			outcome.PollErr = pollErr
-		} else {
-			outcome.State, outcome.Error = state, errText
-			switch state {
+		results := make(chan pollResult, 1)
+		go func() {
+			state, errText, pollErr := pollComposeJob(client, jobID)
+			results <- pollResult{state: state, errText: errText, err: pollErr}
+		}()
+
+		timer := time.NewTimer(left)
+		select {
+		case result := <-results:
+			timer.Stop()
+			if result.err != nil {
+				outcome.PollErr = result.err
+				break
+			}
+			outcome.State, outcome.Error = result.state, result.errText
+			switch result.state {
 			case "SUCCESS", "FAILED", "ABORTED":
 				return outcome
 			}
+		case <-ctx.Done():
+			timer.Stop()
+			outcome.Cancelled = true
+			return outcome
+		case <-timer.C:
+			return outcome
 		}
 
 		pause := min(jobPollInterval, time.Until(deadline))
 		if pause <= 0 {
 			return outcome
 		}
-		timer := time.NewTimer(pause)
+		timer = time.NewTimer(pause)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -361,7 +388,7 @@ func parseCompose(text string) (map[string]any, error) {
 	if root.Kind != yaml.MappingNode {
 		return nil, fmt.Errorf("compose must be a mapping at the top level, got a %s", yamlKind(root))
 	}
-	if err := checkComposeKeys(root); err != nil {
+	if err := checkComposeTree(root); err != nil {
 		return nil, err
 	}
 	services := resolveAlias(mappingValue(root, "services"))
@@ -461,20 +488,23 @@ func convertJSONItem(value any) (any, error) {
 	return value, nil
 }
 
-// checkComposeKeys refuses a mapping key that is not a string, at any depth, and
-// a cyclic alias. The JSON form the appliance takes has string keys only, and an
-// anchor that contains itself has no finite form at all.
-func checkComposeKeys(root *yaml.Node) error {
-	return checkNodeKeys(root, map[*yaml.Node]bool{}, map[*yaml.Node]bool{})
+// checkComposeTree refuses, before the yaml decoder turns the tree into values,
+// everything the appliance's JSON form cannot carry: a mapping key that is not a
+// string at any depth, a cyclic alias (an anchor that contains itself has no
+// finite form), and a number that a 64-bit integer or float cannot hold exactly.
+// The scalar check must run on the node tree: the decoder has already rounded
+// 9007199254740993.0 to 9007199254740992 by the time a value exists.
+func checkComposeTree(root *yaml.Node) error {
+	return checkNode(root, map[*yaml.Node]bool{}, map[*yaml.Node]bool{})
 }
 
-// checkNodeKeys walks a node tree. onPath holds the nodes on the current
-// recursion path, so an alias that leads back to one of them is refused as a
-// cycle. done holds the nodes already checked: an anchor shared by many aliases
-// is checked once, which keeps the walk linear in the document ("billion
-// laughs" nests these aliases, and the yaml decoder's own aliasing limit may
-// refuse such a document before this walk sees it).
-func checkNodeKeys(node *yaml.Node, onPath, done map[*yaml.Node]bool) error {
+// checkNode walks a node tree. onPath holds the nodes on the current recursion
+// path, so an alias that leads back to one of them is refused as a cycle. done
+// holds the nodes already checked: an anchor shared by many aliases is checked
+// once, which keeps the walk linear in the document ("billion laughs" nests
+// these aliases, and the yaml decoder's own aliasing limit may refuse such a
+// document before this walk sees it).
+func checkNode(node *yaml.Node, onPath, done map[*yaml.Node]bool) error {
 	if node == nil || done[node] {
 		return nil
 	}
@@ -482,7 +512,7 @@ func checkNodeKeys(node *yaml.Node, onPath, done map[*yaml.Node]bool) error {
 		return fmt.Errorf("compose has a cyclic alias at line %d: an anchor contains itself, so the compose has no finite form", node.Line)
 	}
 	onPath[node] = true
-	err := checkChildKeys(node, onPath, done)
+	err := checkNodeContent(node, onPath, done)
 	delete(onPath, node)
 	if err != nil {
 		return err
@@ -491,8 +521,8 @@ func checkNodeKeys(node *yaml.Node, onPath, done map[*yaml.Node]bool) error {
 	return nil
 }
 
-// checkChildKeys checks the children of one node and recurses into them.
-func checkChildKeys(node *yaml.Node, onPath, done map[*yaml.Node]bool) error {
+// checkNodeContent checks one node and recurses into its children.
+func checkNodeContent(node *yaml.Node, onPath, done map[*yaml.Node]bool) error {
 	switch node.Kind {
 	case yaml.MappingNode:
 		for i := 0; i+1 < len(node.Content); i += 2 {
@@ -502,18 +532,51 @@ func checkChildKeys(node *yaml.Node, onPath, done map[*yaml.Node]bool) error {
 			if key.Kind != yaml.ScalarNode || (key.Tag != "!!str" && key.Tag != "!!merge") {
 				return fmt.Errorf("compose keys must be strings: line %d has a %s key %q", key.Line, yamlKind(key), key.Value)
 			}
-			if err := checkNodeKeys(node.Content[i+1], onPath, done); err != nil {
+			if err := checkNode(node.Content[i+1], onPath, done); err != nil {
 				return err
 			}
 		}
 	case yaml.SequenceNode, yaml.DocumentNode:
 		for _, child := range node.Content {
-			if err := checkNodeKeys(child, onPath, done); err != nil {
+			if err := checkNode(child, onPath, done); err != nil {
 				return err
 			}
 		}
 	case yaml.AliasNode:
-		return checkNodeKeys(node.Alias, onPath, done)
+		return checkNode(node.Alias, onPath, done)
+	case yaml.ScalarNode:
+		return checkScalar(node)
+	}
+	return nil
+}
+
+// checkScalar refuses a number the JSON the appliance takes cannot carry
+// exactly. It reads the node, not a decoded value, because the decoder loses
+// digits first: 9007199254740993.0 arrives here as that text and would arrive as
+// 9007199254740992 as a float64.
+func checkScalar(node *yaml.Node) error {
+	switch node.Tag {
+	case "!!float":
+		var value float64
+		if err := node.Decode(&value); err != nil {
+			return fmt.Errorf("compose line %d: the float %s cannot be read: %w", node.Line, node.Value, err)
+		}
+		if math.IsInf(value, 0) || math.IsNaN(value) {
+			return fmt.Errorf("compose line %d: the float %s cannot be sent as JSON, which has no infinity and no NaN", node.Line, node.Value)
+		}
+		if math.Trunc(value) == value && math.Abs(value) >= maxExactFloat {
+			return fmt.Errorf("compose line %d: the float %s is an integer of 2^53 or more, so a 64-bit float cannot hold it exactly", node.Line, node.Value)
+		}
+	case "!!int":
+		var value any
+		if err := node.Decode(&value); err != nil {
+			return fmt.Errorf("compose line %d: the integer %s cannot be read: %w", node.Line, node.Value, err)
+		}
+		switch value.(type) {
+		case int, int64:
+			return nil
+		}
+		return fmt.Errorf("compose line %d: the integer %s does not fit a signed 64-bit integer", node.Line, node.Value)
 	}
 	return nil
 }
@@ -532,7 +595,7 @@ func mappingValue(node *yaml.Node, key string) *yaml.Node {
 }
 
 // resolveAlias follows an anchor alias to the node it names. It returns nil for a
-// cycle of aliases; checkComposeKeys refuses such a compose before this runs, so
+// cycle of aliases; checkComposeTree refuses such a compose before this runs, so
 // the nil only keeps a caller from looping or panicking.
 func resolveAlias(node *yaml.Node) *yaml.Node {
 	seen := map[*yaml.Node]bool{}

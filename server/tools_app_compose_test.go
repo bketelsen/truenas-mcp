@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -72,10 +73,11 @@ type composeMockOptions struct {
 	updateError    error
 }
 
-// composeHarness records what the tool called.
+// composeHarness records what the tool called. The poll counter is atomic: a
+// poll that the tool abandoned keeps running in its own goroutine.
 type composeHarness struct {
 	updates     []any
-	polls       int
+	polls       atomic.Int64
 	configCalls int
 }
 
@@ -121,13 +123,13 @@ func newComposeHarness(t *testing.T, opts composeMockOptions) (*mockCaller, *com
 				}
 				return json.RawMessage(`4242`), nil
 			case "core.get_jobs":
-				h.polls++
-				if opts.pollErrorFirst && h.polls == 1 {
+				polls := h.polls.Add(1)
+				if opts.pollErrorFirst && polls == 1 {
 					return nil, errors.New("connection reset by peer")
 				}
 				state := states[len(states)-1]
-				if h.polls-1 < len(states) {
-					state = states[h.polls-1]
+				if polls-1 < int64(len(states)) {
+					state = states[polls-1]
 				}
 				job := map[string]any{"id": 4242, "state": state, "progress": 100}
 				if opts.jobError != "" {
@@ -409,8 +411,8 @@ func TestAppCompose_WriteSuccess(t *testing.T) {
 	if !reflect.DeepEqual(h.updates[0], want) {
 		t.Errorf("app.update payload = %#v, want %#v", h.updates[0], want)
 	}
-	if h.polls < 3 {
-		t.Errorf("core.get_jobs polled %d times, want at least 3 (RUNNING, RUNNING, SUCCESS)", h.polls)
+	if h.polls.Load() < 3 {
+		t.Errorf("core.get_jobs polled %d times, want at least 3 (RUNNING, RUNNING, SUCCESS)", h.polls.Load())
 	}
 	if got["job_id"] != float64(4242) {
 		t.Errorf("job_id = %v, want 4242", got["job_id"])
@@ -507,8 +509,8 @@ func TestAppCompose_JobTimeout(t *testing.T) {
 			t.Errorf("error %q does not contain %q", msg, want)
 		}
 	}
-	if h.polls < 2 {
-		t.Errorf("core.get_jobs polled %d times, want several", h.polls)
+	if h.polls.Load() < 2 {
+		t.Errorf("core.get_jobs polled %d times, want several", h.polls.Load())
 	}
 	if len(h.updates) != 1 {
 		t.Errorf("app.update called %d times, want 1 (a timeout is not replayed)", len(h.updates))
@@ -541,8 +543,8 @@ func TestAppCompose_UpdateTransportError(t *testing.T) {
 	if len(h.updates) != 1 {
 		t.Errorf("app.update called %d times, want exactly 1: it must never be replayed", len(h.updates))
 	}
-	if h.polls != 0 {
-		t.Errorf("core.get_jobs polled %d times, want 0 without a job ID", h.polls)
+	if h.polls.Load() != 0 {
+		t.Errorf("core.get_jobs polled %d times, want 0 without a job ID", h.polls.Load())
 	}
 }
 
@@ -555,8 +557,8 @@ func TestAppCompose_PollErrorThenSuccess(t *testing.T) {
 	if got["state"] != "SUCCESS" {
 		t.Errorf("state = %v, want SUCCESS after a failed poll", got["state"])
 	}
-	if h.polls != 2 {
-		t.Errorf("core.get_jobs polled %d times, want 2 (1 failure, 1 success)", h.polls)
+	if h.polls.Load() != 2 {
+		t.Errorf("core.get_jobs polled %d times, want 2 (1 failure, 1 success)", h.polls.Load())
 	}
 }
 
@@ -815,14 +817,14 @@ func TestAppCompose_StoredNumberRefused(t *testing.T) {
 }
 
 // pollCountingMock answers core.get_jobs with one state and counts the polls.
-func pollCountingMock(t *testing.T, state string, onPoll func()) (*mockCaller, *int) {
+func pollCountingMock(t *testing.T, state string, onPoll func()) (*mockCaller, *atomic.Int64) {
 	t.Helper()
-	polls := new(int)
+	polls := new(atomic.Int64)
 	mock := &mockCaller{CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
 		if method != "core.get_jobs" {
 			t.Errorf("unexpected method %q", method)
 		}
-		*polls++
+		polls.Add(1)
 		if onPoll != nil {
 			onPoll()
 		}
@@ -841,8 +843,8 @@ func TestWaitForComposeJob_CancelledBeforeFirstPoll(t *testing.T) {
 	if !outcome.Cancelled {
 		t.Error("a cancelled context must end the wait as cancelled")
 	}
-	if *polls != 0 {
-		t.Errorf("core.get_jobs polled %d times after cancellation, want 0", *polls)
+	if polls.Load() != 0 {
+		t.Errorf("core.get_jobs polled %d times after cancellation, want 0", polls.Load())
 	}
 }
 
@@ -860,8 +862,8 @@ func TestWaitForComposeJob_CancelledBetweenPolls(t *testing.T) {
 	if !outcome.Cancelled {
 		t.Error("the wait must report the cancellation")
 	}
-	if *polls != 1 {
-		t.Errorf("core.get_jobs polled %d times, want 1", *polls)
+	if polls.Load() != 1 {
+		t.Errorf("core.get_jobs polled %d times, want 1", polls.Load())
 	}
 	if elapsed > time.Second {
 		t.Errorf("the wait took %s after a cancel, want an immediate return", elapsed)
@@ -884,8 +886,8 @@ func TestWaitForComposeJob_NoPollAfterDeadline(t *testing.T) {
 	if outcome.State != "RUNNING" {
 		t.Errorf("last state = %q, want RUNNING", outcome.State)
 	}
-	if *polls != 1 {
-		t.Errorf("core.get_jobs polled %d times, want 1: the wait must not poll after the deadline", *polls)
+	if polls.Load() != 1 {
+		t.Errorf("core.get_jobs polled %d times, want 1: the wait must not poll after the deadline", polls.Load())
 	}
 	if elapsed > 5*time.Second {
 		t.Errorf("the wait took %s, want about 20ms", elapsed)
@@ -904,7 +906,131 @@ func TestWaitForComposeJob_PollsUntilDeadline(t *testing.T) {
 		t.Error("a timeout is not a cancellation")
 	}
 	// Polls are at most one interval apart, so 50ms allows at most 11 polls.
-	if *polls < 1 || *polls > 11 {
-		t.Errorf("core.get_jobs polled %d times in 50ms at a 5ms interval", *polls)
+	if polls.Load() < 1 || polls.Load() > 11 {
+		t.Errorf("core.get_jobs polled %d times in 50ms at a 5ms interval", polls.Load())
+	}
+}
+
+func TestAppCompose_FloatAndBigIntegerRefusals(t *testing.T) {
+	cases := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{"float above 2^53", "9007199254740993.0", "2^53"},
+		{"exponent float above 2^53", "9.007199254740993e15", "2^53"},
+		{"negative float above 2^53", "-9007199254740993.0", "2^53"},
+		{"infinite float", ".inf", "infinity"},
+		{"not a number", ".nan", "NaN"},
+		{"int64 max plus 1", "9223372036854775808", "signed 64-bit integer"},
+		{"2^64", "18446744073709551616", "2^53"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mock, h := newComposeHarness(t, composeMockOptions{})
+			result, err := callTool(t, mock, false, "truenas_app_compose_update", map[string]any{
+				"name":    composeTestApp,
+				"compose": "services:\n  web:\n    image: a\n    value: " + tc.value + "\n",
+				"dry_run": true,
+			})
+			if err == nil && !result.IsError {
+				t.Fatal("expected the number to be refused")
+			}
+			msg := toolErrorText(t, result, err)
+			if !strings.Contains(msg, tc.want) {
+				t.Errorf("error %q does not contain %q", msg, tc.want)
+			}
+			if !strings.Contains(msg, tc.value) {
+				t.Errorf("error %q does not name the value %q", msg, tc.value)
+			}
+			if !strings.Contains(msg, "line 4") {
+				t.Errorf("error %q does not name the line", msg)
+			}
+			if h.configCalls != 0 || len(h.updates) != 0 {
+				t.Error("a refused number must be caught before app.config and app.update")
+			}
+		})
+	}
+}
+
+func TestAppCompose_SmallFloatsAccepted(t *testing.T) {
+	object, err := parseCompose("services:\n  web:\n    image: a\n    whole: 5.0\n    fraction: 1.5\n")
+	if err != nil {
+		t.Fatalf("parseCompose: %v", err)
+	}
+	web, ok := object["services"].(map[string]any)["web"].(map[string]any)
+	if !ok {
+		t.Fatalf("services.web is not a mapping: %v", object["services"])
+	}
+	// 5.0 has no fraction, so the JSON form is the integer 5.
+	if web["whole"] != int64(5) {
+		t.Errorf("whole = %v (%T), want int64(5)", web["whole"], web["whole"])
+	}
+	if web["fraction"] != 1.5 {
+		t.Errorf("fraction = %v (%T), want 1.5", web["fraction"], web["fraction"])
+	}
+}
+
+func TestWaitForComposeJob_CancelWhilePollBlocks(t *testing.T) {
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	entered := make(chan struct{}, 1)
+
+	mock := &mockCaller{CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+		entered <- struct{}{}
+		<-release
+		return json.RawMessage(`[{"id":1,"state":"RUNNING"}]`), nil
+	}}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go func() {
+		<-entered
+		cancel()
+	}()
+
+	start := time.Now()
+	outcome := waitForComposeJob(ctx, mock, 1, time.Minute)
+	elapsed := time.Since(start)
+
+	if !outcome.Cancelled {
+		t.Error("a cancel during a blocking poll must end the wait as cancelled")
+	}
+	if elapsed > time.Second {
+		t.Errorf("the wait took %s after a cancel while the poll blocks, want a prompt return", elapsed)
+	}
+}
+
+func TestWaitForComposeJob_DeadlineWhilePollBlocks(t *testing.T) {
+	old := jobPollInterval
+	jobPollInterval = time.Millisecond
+	t.Cleanup(func() { jobPollInterval = old })
+
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	var calls atomic.Int64
+
+	// The first poll answers at once; every later poll blocks until the test
+	// ends, so the deadline has to win over a poll that never returns.
+	mock := &mockCaller{CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+		if calls.Add(1) == 1 {
+			return json.RawMessage(`[{"id":1,"state":"RUNNING"}]`), nil
+		}
+		<-release
+		return json.RawMessage(`[{"id":1,"state":"SUCCESS"}]`), nil
+	}}
+
+	start := time.Now()
+	outcome := waitForComposeJob(t.Context(), mock, 1, 50*time.Millisecond)
+	elapsed := time.Since(start)
+
+	if outcome.Cancelled {
+		t.Error("a deadline is not a cancellation")
+	}
+	if outcome.State != "RUNNING" {
+		t.Errorf("last state = %q, want RUNNING from the poll that answered", outcome.State)
+	}
+	if elapsed > time.Second {
+		t.Errorf("the wait took %s across a blocking poll at the deadline, want a prompt return", elapsed)
 	}
 }
