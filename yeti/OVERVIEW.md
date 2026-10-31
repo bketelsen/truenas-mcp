@@ -25,6 +25,8 @@ main.go                  Entry point — uses Charm fang CLI framework
     ├── tools_reports.go  Aggregated health report and job-list tools
     ├── tools_app.go      App list/get/config/start/stop/restart/update/delete tools + update report
     ├── tools_app_configure.go  App configuration write tool (deep-merge over app.config, then app.update)
+    ├── tools_app_compose.go  Custom (compose) app write tool (validate YAML, dry-run diff + hash guard, app.update once, wait for the job)
+    ├── linediff.go       LCS-based unified line diff used by the compose tool (no external diff dependency)
     └── params.go         Typed MCP parameter accessors
 ```
 
@@ -56,6 +58,7 @@ main.go                  Entry point — uses Charm fang CLI framework
 | `charm.land/fang/v2` | v2.0.1 | CLI framework (Cobra wrapper) |
 | `github.com/spf13/cobra` | v1.10.2 | CLI command structure |
 | `github.com/truenas/api_client_golang` | v0.0.0-20250820 | TrueNAS WebSocket JSON-RPC client |
+| `go.yaml.in/yaml/v3` | v3.0.4 | Parse and canonically render a custom app's compose file |
 
 ## Key Patterns
 
@@ -82,7 +85,7 @@ Each tool is defined inline with `s.AddTool(&mcp.Tool{...}, handlerFunc)`. The h
 Every tool also sets `Annotations: &mcp.ToolAnnotations{...}` (go-sdk v1.4.0 field types: `ReadOnlyHint bool`, `DestructiveHint *bool`, `IdempotentHint bool`, `OpenWorldHint *bool`, `Title string`; the pointers use Go 1.26 `new(false)` / `new(true)`). Rules, enforced by `server/annotations_test.go`:
 - `Title` is always set, and `OpenWorldHint` is always `new(false)` — the only world is the one appliance.
 - Tools registered in read-only mode set `ReadOnlyHint: true`.
-- Write tools set `ReadOnlyHint: false` and an explicit `DestructiveHint` (the MCP default when omitted is true). `true` means the call can lose data or settings or is hard to undo (deletes, `truenas_app_configure`, `truenas_app_delete`, `truenas_app_update`, `truenas_app_update_all`, `truenas_snapshot_task_create`); `false` means additive or recoverable.
+- Write tools set `ReadOnlyHint: false` and an explicit `DestructiveHint` (the MCP default when omitted is true). `true` means the call can lose data or settings or is hard to undo (deletes, `truenas_app_configure`, `truenas_app_compose_update`, `truenas_app_delete`, `truenas_app_update`, `truenas_app_update_all`, `truenas_snapshot_task_create`); `false` means additive or recoverable.
 - `IdempotentHint: true` only when a repeat call with the same arguments has no further effect on the appliance.
 - Non-obvious classifications carry a trailing one-line comment explaining why (e.g. app updates stay destructive even though `upgradeApp` sends `snapshot_hostpaths: true`, because `app.rollback` restores only the ix-volumes snapshot and host-path snapshots need a manual ZFS rollback; `truenas_app_start` is not idempotent because `app.start` always runs `compose up --force-recreate`).
 
@@ -100,6 +103,21 @@ Clients such as agent harnesses use these hints to decide what needs human confi
 - `app.rollback` (`plugins/apps/rollback.py`) rolls back only `<ix-volumes ds>@<version>` (when `rollback_snapshot` is true). It never touches `ix-app-upgrade-*` snapshots, and nothing in the middleware deletes them.
 
 That last point is why both update tools keep `DestructiveHint: true`. Host-path data is now recoverable, but only by a manual `zfs rollback` of the whole dataset, which also reverts other apps that share the dataset and destroys newer snapshots. The README's "App updates and recovery" section is the user-facing version of this. Do not mark the update tools non-destructive unless the server also gains a tool that restores the host-path snapshots, or TrueNAS's rollback starts doing it.
+
+### Custom App Compose Updates
+
+`truenas_app_compose_update` (`server/tools_app_compose.go`) is the only tool that writes a custom (compose) app. `truenas_app_configure` keeps refusing custom apps, because their definition is not a set of schema values but one compose object, `custom_compose_config`, which `app.update` replaces whole. The middleware role for that call is `APPS_WRITE`. The tool is registered only with `--enable-writes`, next to `registerAppConfigureTools` in `server/server.go`.
+
+Why each part exists:
+
+- YAML validation (`parseCompose`) runs before the stored compose is read. It refuses empty text, a parse error, more than 1 document, a non-mapping top level, a mapping key that is not a string at any depth, a cyclic alias, a missing or empty `services` mapping, and a service that is not a mapping. The tree walk (`checkComposeTree`, `checkNode`) keeps the nodes on the current path, so an alias back to one of them is a `cyclic alias`, and it keeps the nodes already checked, so an anchor shared by many aliases costs one visit and a "billion laughs" document cannot make it exponential — the yaml decoder's own aliasing limit usually refuses such a document first. `resolveAlias` returns nil instead of looping on a cycle. The same walk calls `checkScalar` on the node, before any value exists, and refuses a float that is infinite, NaN, or has no fraction and is 2^53 or more in absolute value, and an integer that does not fit `int64`; the decoder would already have rounded `9007199254740993.0` to `9007199254740992`. The value is normalized through `json.Marshal` and a `json.Decoder` with `UseNumber()`, and the object — not the text — goes to the diff, the hash and `app.update`, so the appliance gets exactly what the caller saw.
+- Numbers keep their exact form (`convertJSONNumbers`, `numberValue`): `int64` for an integer literal that fits, a refusal that names the value for a larger integer literal, and `float64` otherwise, except a float of 2^53 or more with no fraction, which is refused. A plain `float64` decode would turn `9007199254740993` into `9007199254740992` in the hash, the diff and the payload. The stored compose from `app.config` is decoded the same way; a number it cannot carry exactly is refused before any write.
+- `canonicalYAML` renders both sides with a `yaml.v3` encoder at 2-space indent. `yaml.v3` sorts map keys (digit-aware), so equal content gives equal text whatever the key order or YAML style. The identical check and the hash therefore compare content only.
+- `current_sha256` is the hex SHA-256 of the canonical stored compose. A write must pass it as `expected_sha256`; a missing or different value is refused with the current hash in the message, so a caller cannot apply a compose it never previewed, and a compose that changed after the preview cannot be overwritten silently.
+- `unifiedDiff` (`server/linediff.go`) is a small LCS line diff: common prefix and suffix are copied, the middle comes from a dynamic-programming LCS table capped at 4M cells, and hunks carry 3 context lines with `--- current` / `+++ proposed` headers. There is no diff dependency.
+- `app.update` is called once and never replayed. A transport error leaves the job state unknown, and the middleware keeps no previous compose, so the error tells the caller to check `truenas_jobs_list` instead of running the tool again.
+- The job wait polls `core.get_jobs` every `jobPollInterval` (2 seconds; a package variable so tests use milliseconds) until `SUCCESS`, `FAILED`, `ABORTED`, the deadline or context cancellation. The context and the deadline are checked before each poll, and the wait between polls is the smaller of `jobPollInterval` and the time left, so no poll starts after the deadline. `truenas.Caller` takes no context, so a poll call cannot be stopped: each poll runs in its own goroutine and sends its result to a channel with room for 1, so a cancel or the deadline ends the wait at once and the abandoned poll finishes in the background with its result dropped. An abandoned poll is a read only, and `app.update` is never called again. A failed poll is a read and is retried; its error is kept for the final message. `composeJobWait` (a package variable) replaces `timeout_seconds` in tests, because the smallest allowed timeout is 30 seconds.
+- The full previous compose is `current_compose` of the dry run and `previous_compose` of a successful write; TrueNAS keeps no copy. The `FAILED`/`ABORTED` error says to send that complete compose back with this tool to roll back. A unified diff is not a full copy, so it is never offered as the rollback source.
 
 ### Read-Only Mode
 

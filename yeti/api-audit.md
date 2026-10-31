@@ -42,14 +42,14 @@ one up in `core.get_methods` (keys are method names; each value has `accepts`, `
 | `sharing.nfs.delete` | `truenas_nfs_delete` | present | `id` integer | OK (schema) |
 | `alert.list` | `truenas_alert_list`, `truenas_health_report` | present | none, or a `level` filter | **Gap 1** (fixed): accepts no arguments |
 | `alert.dismiss` | `truenas_alert_dismiss` | present | `uuid` string | OK (schema) |
-| `app.query` | `truenas_app_list`, `truenas_app_get`, `truenas_apps_update_report`, `truenas_app_update`, `truenas_app_update_all`, `truenas_app_configure` | present | filters `name =` / `upgrade_available =` | OK (live); returned fields used by the report all present |
-| `app.config` | `truenas_app_config`, `truenas_app_configure` | present | `app_name` | OK (schema) |
+| `app.query` | `truenas_app_list`, `truenas_app_get`, `truenas_apps_update_report`, `truenas_app_update`, `truenas_app_update_all`, `truenas_app_configure`, `truenas_app_compose_update` | present | filters `name =` / `upgrade_available =` | OK (live); returned fields used by the report all present |
+| `app.config` | `truenas_app_config`, `truenas_app_configure`, `truenas_app_compose_update` | present | `app_name` | OK (schema) |
 | `app.start` | `truenas_app_start` | present (job) | `app_name` | OK (schema) |
 | `app.stop` | `truenas_app_stop` | present (job) | `app_name` | OK (schema) |
 | `app.redeploy` | `truenas_app_restart` | present (job) | `app_name` | OK (schema) |
-| `app.update` | `truenas_app_configure` | present (job) | `app_name`, `{values}` | OK (schema) |
+| `app.update` | `truenas_app_configure` (with `{values}`), `truenas_app_compose_update` (with `{custom_compose_config}`) | present (job) | `app_name`, `{values}` or `{custom_compose_config}` | OK (schema) |
 | `app.upgrade` | `truenas_app_update`, `truenas_app_update_all` | present (job) | `app_version`, `values`, `snapshot_hostpaths` | OK (schema) |
-| `core.get_jobs` | `truenas_jobs_list` | present | filters, `order_by`, `limit` | OK (live) |
+| `core.get_jobs` | `truenas_jobs_list`, `truenas_app_compose_update` (poll loop) | present | filters, `order_by`, `limit`; the poll uses the filter `id =` | OK (live) |
 | `pool.snapshottask.query` | `truenas_snapshot_task_list`, `truenas_snapshot_task_create` | present | none, or filter `dataset =` | OK (schema + middleware source, not called live) |
 | `pool.snapshottask.create` | `truenas_snapshot_task_create` | present | 1 object: `dataset`, `recursive`, `exclude`, `lifetime_value`, `lifetime_unit` (upper-case enum), `naming_schema`, `schedule` (minute, hour, dom, month, dow, begin, end), `allow_empty`, `enabled` | OK (schema + middleware source, not called live) |
 | `replication.query` | `truenas_replication_task_list` | present | none | OK (schema + middleware source, not called live) |

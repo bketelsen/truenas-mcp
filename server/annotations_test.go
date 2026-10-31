@@ -40,12 +40,13 @@ var wantToolHints = map[string]toolHints{
 	"truenas_jobs_list":             {readOnly: true},
 
 	// Destructive writes: can lose data or settings, or are hard to undo.
-	"truenas_dataset_delete":  {destructive: true, idempotent: true},
-	"truenas_snapshot_delete": {destructive: true, idempotent: true},
-	"truenas_smb_delete":      {destructive: true, idempotent: true},
-	"truenas_nfs_delete":      {destructive: true, idempotent: true},
-	"truenas_app_configure":   {destructive: true},
-	"truenas_app_delete":      {destructive: true, idempotent: true},
+	"truenas_dataset_delete":     {destructive: true, idempotent: true},
+	"truenas_snapshot_delete":    {destructive: true, idempotent: true},
+	"truenas_smb_delete":         {destructive: true, idempotent: true},
+	"truenas_nfs_delete":         {destructive: true, idempotent: true},
+	"truenas_app_configure":      {destructive: true},
+	"truenas_app_compose_update": {destructive: true},
+	"truenas_app_delete":         {destructive: true, idempotent: true},
 	// The app updates snapshot ix-volumes and host-path datasets first, but
 	// app.rollback restores only the ix-volumes, so host-path recovery is a
 	// manual ZFS rollback; see upgradeApp in tools_app.go.
