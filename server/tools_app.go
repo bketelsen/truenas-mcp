@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"truenas-mcp/truenas"
@@ -11,8 +12,12 @@ import (
 
 func registerAppReadTools(s *mcp.Server, client truenas.Caller) {
 	s.AddTool(&mcp.Tool{
-		Name:        "truenas_app_list",
-		Description: "List all installed apps with name, version, status (running/stopped), and update availability.",
+		Name: "truenas_app_list",
+		Description: "List every installed app as a compact summary: name, id, state, version, " +
+			"update availability (upgrade_available, image_updates_available), portals, and train, " +
+			"with the total in summary.apps_total. The result stays small on purpose, because the raw " +
+			"app.query payload can be larger than an MCP client keeps. " +
+			"truenas_app_get gives the full detail of 1 app.",
 		InputSchema: noArgs(),
 		Annotations: &mcp.ToolAnnotations{
 			Title:         "List Apps",
@@ -24,7 +29,34 @@ func registerAppReadTools(s *mcp.Server, client truenas.Caller) {
 		if err != nil {
 			return nil, fmt.Errorf("app.query: %w", err)
 		}
-		return jsonResult(result)
+
+		var apps []map[string]any
+		if err := json.Unmarshal(result, &apps); err != nil {
+			return nil, fmt.Errorf("parsing app.query: %w", err)
+		}
+
+		// The raw app.query payload was about 104,700 characters for 13 apps on a
+		// live NAS (notes Markdown, metadata, active_workloads with Docker network
+		// detail). The Pi Pocket MCP client cuts a tool result at 40,000
+		// characters, keeping the first and last 20,000, so the apps in the middle
+		// were lost (2026-11-02: only 7 of 13 apps came through). Carry only the
+		// fields below, sorted by name so the output is stable.
+		entries := make([]map[string]any, 0, len(apps))
+		for _, app := range apps {
+			entries = append(entries, summarizeApp(app))
+		}
+		sort.SliceStable(entries, func(i, j int) bool {
+			left, _ := entries[i]["name"].(string)
+			right, _ := entries[j]["name"].(string)
+			return left < right
+		})
+
+		return jsonValueResult(map[string]any{
+			"summary": map[string]any{
+				"apps_total": len(apps),
+			},
+			"apps": entries,
+		})
 	})
 
 	s.AddTool(&mcp.Tool{
@@ -427,6 +459,38 @@ func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 			"remove_ix_volumes": removeIxVolumes,
 		})
 	})
+}
+
+// summarizeApp projects one app.query entry onto the compact field set that
+// truenas_app_list returns. Each field is copied as-is and is nil when the app
+// does not carry it. notes, metadata, active_workloads and config are dropped
+// on purpose: they are what made the raw payload too large for a client to
+// accept. train and containers are lifted out of metadata and active_workloads.
+func summarizeApp(app map[string]any) map[string]any {
+	entry := map[string]any{
+		"name":                    app["name"],
+		"id":                      app["id"],
+		"state":                   app["state"],
+		"version":                 app["version"],
+		"human_version":           app["human_version"],
+		"latest_version":          app["latest_version"],
+		"latest_app_version":      app["latest_app_version"],
+		"upgrade_available":       app["upgrade_available"],
+		"image_updates_available": app["image_updates_available"],
+		"custom_app":              app["custom_app"],
+		"migrated":                app["migrated"],
+		"action_required":         app["action_required"],
+		"portals":                 app["portals"],
+		"train":                   nil,
+		"containers":              nil,
+	}
+	if metadata, ok := app["metadata"].(map[string]any); ok {
+		entry["train"] = metadata["train"]
+	}
+	if workloads, ok := app["active_workloads"].(map[string]any); ok {
+		entry["containers"] = workloads["containers"]
+	}
+	return entry
 }
 
 func upgradeApp(client truenas.Caller, name string) (any, error) {

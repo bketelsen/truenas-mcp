@@ -141,7 +141,7 @@ Tools marked with `*` are excluded by default and are registered only with `--en
 | `truenas_nfs_delete` | Delete an NFS export `*` |
 | `truenas_alert_list` | Active alerts (filterable by level) |
 | `truenas_alert_dismiss` | Dismiss an alert `*` |
-| `truenas_app_list` | Installed apps with status |
+| `truenas_app_list` | Every installed app as a compact summary (name, state, version, updates, portals, train; full detail with `truenas_app_get`) |
 | `truenas_app_get` | App details: running containers, images, mounts, ports |
 | `truenas_app_config` | Installed app configuration values (may contain plaintext secrets) |
 | `truenas_apps_update_report` | Apps with app or container image updates available |
