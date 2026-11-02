@@ -205,9 +205,15 @@ Dismiss an alert.
 ## App Tools (`tools_app.go`)
 
 ### `truenas_app_list`
-List installed apps with name, version, status, and update availability.
+List every installed app as a compact summary: `name`, `id`, `state`, `version`, `human_version`,
+`latest_version`, `latest_app_version`, `upgrade_available`, `image_updates_available`,
+`custom_app`, `migrated`, `action_required`, `portals`, `train` (from `metadata.train`), and
+`containers` (the container count, from `active_workloads.containers`).
 - Parameters: none
-- API: `app.query`
+- API: `app.query` with no parameters
+- Returns: `{ "summary": { "apps_total": <n> }, "apps": [ <entry>, ... ] }`, sorted by `name` and always an array (`apps: []` when no app is installed). Each entry carries only the fields above; a field the app does not have is `null`.
+- Why compact: the raw `app.query` payload was about 104,700 characters for 13 apps (each app carries `notes` Markdown, `metadata`, and `active_workloads` with Docker network detail). The Pi Pocket MCP client cuts a tool result at 40,000 characters, keeping the first and last 20,000, so on 2026-11-02 only 7 of 13 apps reached the caller. `notes`, `metadata`, `active_workloads` and `config` are therefore dropped here. Projection lives in `summarizeApp` in `server/tools_app.go`; the regression test builds 13 apps of that size and asserts the result stays under 40,000 characters.
+- For one app's full detail (containers, images, mounts, ports, notes, metadata), call `truenas_app_get`; for the raw config object, `truenas_app_config`.
 
 ### `truenas_app_get`
 Get detailed info for a specific app.
