@@ -314,11 +314,15 @@ func loadProtectionInputs(client truenas.Caller, filters [][]any) (protectionInp
 	}
 
 	// The apps pool only sharpens the limits text. A release without
-	// docker.config, or a failure, leaves the generic wording in place.
+	// docker.config, or a failure, leaves the generic wording in place. A name
+	// that is not a plausible pool name is ignored, so a hostile or broken
+	// answer cannot grow the text.
 	if raw, callErr := client.Call("docker.config"); callErr == nil {
 		var cfg map[string]any
 		if jsonErr := json.Unmarshal(raw, &cfg); jsonErr == nil {
-			in.appsPool, _ = cfg["pool"].(string)
+			if pool, ok := cfg["pool"].(string); ok && protectionPoolNamePattern.MatchString(pool) {
+				in.appsPool = pool
+			}
 		}
 	}
 
@@ -328,6 +332,10 @@ func loadProtectionInputs(client truenas.Caller, filters [][]any) (protectionInp
 	in.snapshots = protectionSnapshotsFromRows(snapshotRows)
 	return in, nil
 }
+
+// protectionPoolNamePattern is the shape of a pool name the limits text may
+// repeat: 1 to 255 characters, starting with a letter or a digit.
+var protectionPoolNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,254}$`)
 
 // protectionNarrowDatasets applies the scope to the dataset rows. The middleware
 // already filters by pool; repeating it here keeps a caller that answers with
@@ -449,6 +457,10 @@ func protectionDatasetRowFor(d protectionDataset, in protectionInputs, taskByID 
 		}
 	}
 
+	// The threshold stays exact in minutes. Only the displayed value is rounded,
+	// so 2 task intervals of 2 minutes still catch an 8-minute-old snapshot.
+	var maxAgeMinutes float64
+	hasMaxAge := false
 	if len(intervals) > 0 {
 		smallest := intervals[0]
 		for _, v := range intervals[1:] {
@@ -456,14 +468,20 @@ func protectionDatasetRowFor(d protectionDataset, in protectionInputs, taskByID 
 				smallest = v
 			}
 		}
-		maxAge := protectionRound1(2 * float64(smallest) / 60)
+		maxAgeMinutes = 2 * float64(smallest)
+		hasMaxAge = true
+		maxAge := protectionRound1(maxAgeMinutes / 60)
 		row.MaxAgeHours = &maxAge
 	}
 
+	var ageMinutes float64
+	hasAge := false
 	if s, ok := newest[d.Name]; ok {
 		row.NewestSnapshot = s.Name
 		if s.HasCreation {
-			age := protectionRound1(now.Sub(time.Unix(s.Creation, 0)).Hours())
+			ageMinutes = now.Sub(time.Unix(s.Creation, 0)).Minutes()
+			hasAge = true
+			age := protectionRound1(ageMinutes / 60)
 			row.NewestAgeHours = &age
 		}
 	}
@@ -475,7 +493,7 @@ func protectionDatasetRowFor(d protectionDataset, in protectionInputs, taskByID 
 	case row.NewestSnapshot == "":
 		row.Flags = append(row.Flags, "no_snapshot")
 	}
-	if row.NewestAgeHours != nil && row.MaxAgeHours != nil && *row.NewestAgeHours > *row.MaxAgeHours {
+	if hasAge && hasMaxAge && ageMinutes > maxAgeMinutes {
 		row.Flags = append(row.Flags, "stale")
 	}
 	if taskFailing {
@@ -655,17 +673,39 @@ func renderProtectionReport(report protectionReport) (string, error) {
 		return text, nil
 	}
 
-	// The summary and the limits are small, so this cannot normally happen.
-	minimal := report
-	minimal.Datasets = []protectionDatasetRow{}
-	minimal.SnapshotTasks = []protectionSnapshotTaskRow{}
-	minimal.ReplicationTasks = []protectionReplicationRow{}
-	minimal.Truncated = protectionTruncatedText(total, len(flagged), total, true)
-	text, err := json.Marshal(minimal)
+	// Nothing else fit: keep the summary, the generic limits, and the counts.
+	// The unflagged count is what the scope holds beyond the flagged rows; the
+	// total is not that count, or it would be counted twice.
+	truncated := protectionTruncatedText(total-len(flagged), len(flagged), total, true)
+	tiny := protectionMinimalReport{
+		Summary:   report.Summary,
+		Limits:    protectionLimitTexts(""),
+		Truncated: truncated,
+	}
+	text, err := json.Marshal(tiny)
+	if err != nil {
+		return "", fmt.Errorf("formatting result: %w", err)
+	}
+	if len(text) <= protectionReportMaxChars {
+		return string(text), nil
+	}
+
+	// The answer must never exceed the limit, so the counts give way to one
+	// fixed sentence when even the smallest report is too long.
+	tiny.Truncated = "Size limit: the report does not fit; use the pool or dataset argument, or flagged_only"
+	text, err = json.Marshal(tiny)
 	if err != nil {
 		return "", fmt.Errorf("formatting result: %w", err)
 	}
 	return string(text), nil
+}
+
+// protectionMinimalReport is the smallest valid answer: the summary, the
+// generic limits, and what the size limit left out.
+type protectionMinimalReport struct {
+	Summary   protectionSummary `json:"summary"`
+	Limits    []string          `json:"limits"`
+	Truncated string            `json:"truncated,omitempty"`
 }
 
 // protectionReportText marshals the report indented, then compact, and reports
@@ -835,52 +875,46 @@ func scheduleIntervalMinutes(schedule any) (int, bool) {
 		return 0, false
 	}
 
-	field := func(key, def string, required bool) (string, bool) {
+	// A default applies only when the key is absent. A key that is present with
+	// null, a blank string, or another type fails closed: the interval is then
+	// unknown and the report does not claim a freshness threshold.
+	field := func(key, def string) (string, bool) {
 		v, present := obj[key]
-		if !present || v == nil {
-			if required {
-				return "", false
-			}
+		if !present {
 			return def, true
 		}
 		s, ok := v.(string)
-		if !ok {
+		if !ok || strings.TrimSpace(s) == "" {
 			return "", false
-		}
-		if strings.TrimSpace(s) == "" {
-			if required {
-				return "", false
-			}
-			return def, true
 		}
 		return s, true
 	}
 
-	minuteField, ok := field("minute", "", true)
+	minuteField, ok := field("minute", "")
 	if !ok {
 		return 0, false
 	}
-	hourField, ok := field("hour", "", true)
+	hourField, ok := field("hour", "")
 	if !ok {
 		return 0, false
 	}
-	domField, ok := field("dom", "*", false)
+	domField, ok := field("dom", "*")
 	if !ok {
 		return 0, false
 	}
-	monthField, ok := field("month", "*", false)
+	monthField, ok := field("month", "*")
 	if !ok {
 		return 0, false
 	}
-	dowField, ok := field("dow", "*", false)
+	dowField, ok := field("dow", "*")
 	if !ok {
 		return 0, false
 	}
-	beginField, ok := field("begin", "00:00", false)
+	beginField, ok := field("begin", "00:00")
 	if !ok {
 		return 0, false
 	}
-	endField, ok := field("end", "23:59", false)
+	endField, ok := field("end", "23:59")
 	if !ok {
 		return 0, false
 	}
@@ -1040,8 +1074,14 @@ func protectionCronValues(field string, min, max int, names map[string]int) (map
 		if low < min || high > max || low > high {
 			return nil, false
 		}
-		for v := low; v <= high; v += step {
+		// Add only while the next value stays at or below high: a huge step such
+		// as 59/9223372036854775807 must not overflow.
+		for v := low; ; {
 			values[v] = true
+			if step > high-v {
+				break
+			}
+			v += step
 		}
 	}
 	if len(values) == 0 {

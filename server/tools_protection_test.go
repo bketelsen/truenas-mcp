@@ -155,6 +155,38 @@ func TestScheduleIntervalMinutes(t *testing.T) {
 			name:     "not an object",
 			schedule: "0 0 * * *",
 		},
+		{
+			// A step of maxint64 must not overflow: only minute 59 fires.
+			name:     "step larger than the range from 59",
+			schedule: map[string]any{"minute": "59/9223372036854775807", "hour": "0"},
+			want:     1440, wantOK: true,
+		},
+		{
+			name:     "step larger than the range from 0",
+			schedule: map[string]any{"minute": "0/9223372036854775807", "hour": "*"},
+			want:     60, wantOK: true,
+		},
+		{
+			// A present optional key fails closed; only an absent key gets a default.
+			name:     "dom is an empty string",
+			schedule: map[string]any{"minute": "0", "hour": "0", "dom": ""},
+		},
+		{
+			name:     "dow is null",
+			schedule: map[string]any{"minute": "0", "hour": "0", "dow": nil},
+		},
+		{
+			name:     "begin is an empty string",
+			schedule: map[string]any{"minute": "0", "hour": "0", "begin": ""},
+		},
+		{
+			name:     "end is a number",
+			schedule: map[string]any{"minute": "0", "hour": "0", "end": float64(5)},
+		},
+		{
+			name:     "month is blank",
+			schedule: map[string]any{"minute": "0", "hour": "0", "month": "  "},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1130,6 +1162,163 @@ func TestProtectionReport_Errors(t *testing.T) {
 			t.Errorf("limits[0] = %q, want fast/ix-apps", got.Limits[0])
 		}
 	})
+
+	// A pool name that is not a plausible pool name is not repeated in the
+	// text: a 40,000-character answer must not push the report over the limit.
+	rejected := []struct {
+		name string
+		pool string
+	}{
+		{"40,000 characters", strings.Repeat("x", 40000)},
+		{"a slash", "fast/slow"},
+		{"a leading dash", "-fast"},
+		{"whitespace", "fast slow"},
+	}
+	for _, tc := range rejected {
+		t.Run("docker.config pool name with "+tc.name, func(t *testing.T) {
+			fixture := protectionBaseFixture(protectionTestNow)
+			fixture.appsPool = tc.pool
+			result, err := callTool(t, fixture.mock(t), true, "truenas_protection_report", nil)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.IsError {
+				t.Fatalf("tool error: %s", resultText(t, result))
+			}
+			text := resultText(t, result)
+			if len(text) > protectionReportMaxChars {
+				t.Fatalf("result is %d characters, want at most %d", len(text), protectionReportMaxChars)
+			}
+			got := decodeProtectionReport(t, text)
+			if !strings.Contains(got.Limits[0], "the apps pool's ix-apps dataset") {
+				t.Errorf("limits[0] = %q, want the generic apps pool wording", got.Limits[0])
+			}
+			if strings.Contains(strings.Join(got.Limits, " "), tc.pool) {
+				t.Errorf("limits repeat the rejected pool name")
+			}
+			if got.Summary.Datasets != 20 {
+				t.Errorf("summary.datasets = %d, want 20", got.Summary.Datasets)
+			}
+		})
+	}
+}
+
+// protectionAgeFixture is one dataset under one task, with one periodic snapshot
+// of the given age.
+func protectionAgeFixture(now time.Time, schedule map[string]any, age time.Duration) protectionFixture {
+	when := now.Add(-age)
+	task := protectionTask(1, "tank", true, nil, "0", "0", true, "FINISHED")
+	task["schedule"] = schedule
+	return protectionFixture{
+		datasets:  []map[string]any{protectionDatasetRowFixture("tank/data", "FILESYSTEM", 1024)},
+		tasks:     []map[string]any{task},
+		snapshots: []map[string]any{protectionSnapshotRow("tank/data", protectionAutoName(when), when)},
+	}
+}
+
+// TestProtectionReport_StaleThreshold checks that the stale flag compares the
+// exact age in minutes with the exact threshold, and rounds only what it shows.
+func TestProtectionReport_StaleThreshold(t *testing.T) {
+	fixProtectionNow(t, protectionTestNow)
+
+	every2 := map[string]any{"minute": "*/2", "hour": "*"} // interval 2 min, threshold 4 min
+	daily := map[string]any{"minute": "0", "hour": "0"}    // interval 1440 min, threshold 48 h
+
+	cases := []struct {
+		name         string
+		schedule     map[string]any
+		age          time.Duration
+		wantStale    bool
+		wantAgeHours float64
+		wantMaxHours float64
+	}{
+		{"8 minutes on a 2-minute task", every2, 8 * time.Minute, true, 0.1, 0.1},
+		{"3 minutes on a 2-minute task", every2, 3 * time.Minute, false, 0.1, 0.1},
+		{"exactly 48 h on a daily task", daily, 48 * time.Hour, false, 48, 48},
+		{"48 h and 1 minute on a daily task", daily, 48*time.Hour + time.Minute, true, 48, 48},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := protectionAgeFixture(protectionTestNow, tc.schedule, tc.age)
+			result, err := callTool(t, fixture.mock(t), true, "truenas_protection_report", nil)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.IsError {
+				t.Fatalf("tool error: %s", resultText(t, result))
+			}
+			got := decodeProtectionReport(t, resultText(t, result))
+			if len(got.Datasets) != 1 {
+				t.Fatalf("%d rows, want 1", len(got.Datasets))
+			}
+			row := got.Datasets[0]
+			if slices.Contains(row.Flags, "stale") != tc.wantStale {
+				t.Errorf("flags = %v, want stale %v", row.Flags, tc.wantStale)
+			}
+			// The shown values are rounded; the flag must not use them.
+			if row.NewestAgeHours == nil || *row.NewestAgeHours != tc.wantAgeHours {
+				t.Errorf("newest_age_hours = %v, want %v", row.NewestAgeHours, tc.wantAgeHours)
+			}
+			if row.MaxAgeHours == nil || *row.MaxAgeHours != tc.wantMaxHours {
+				t.Errorf("max_age_hours = %v, want %v", row.MaxAgeHours, tc.wantMaxHours)
+			}
+		})
+	}
+}
+
+// TestRenderProtectionReport_FallbackCounts forces the last size fallback and
+// checks that it counts each dataset once and stays under the limit.
+func TestRenderProtectionReport_FallbackCounts(t *testing.T) {
+	report := protectionReport{
+		Summary: protectionSummary{
+			GeneratedAt: "2026-11-20T12:00:00Z", Status: "warning", Datasets: 6, Flagged: 2,
+		},
+		Datasets: []protectionDatasetRow{
+			{Name: "tank/a", Flags: []string{"uncovered"}},
+			{Name: "tank/b", Flags: []string{"uncovered"}},
+			{Name: "tank/c"},
+			{Name: "tank/d"},
+			{Name: "tank/e"},
+			{Name: "tank/f"},
+		},
+		// An oversized limits text defeats every step before the last fallback.
+		Limits: []string{strings.Repeat("x", protectionReportMaxChars)},
+	}
+
+	text, err := renderProtectionReport(report)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(text) > protectionReportMaxChars {
+		t.Fatalf("text is %d characters, want at most %d", len(text), protectionReportMaxChars)
+	}
+
+	var got struct {
+		Summary   protectionSummary `json:"summary"`
+		Limits    []string          `json:"limits"`
+		Truncated string            `json:"truncated"`
+	}
+	if err := json.Unmarshal([]byte(text), &got); err != nil {
+		t.Fatalf("text is not JSON: %v\n%s", err, text)
+	}
+	if got.Summary != report.Summary {
+		t.Errorf("summary = %+v, want %+v", got.Summary, report.Summary)
+	}
+	if !slices.Equal(got.Limits, protectionLimitTexts("")) {
+		t.Errorf("limits = %v, want the generic texts", got.Limits)
+	}
+	for _, want := range []string{
+		"4 datasets without flags are left out",
+		"2 flagged datasets are left out",
+		"of 6 datasets",
+	} {
+		if !strings.Contains(got.Truncated, want) {
+			t.Errorf("truncated = %q, want it to contain %q", got.Truncated, want)
+		}
+	}
+	if strings.Contains(got.Truncated, "6 datasets without flags") {
+		t.Errorf("truncated = %q, the unflagged count is double counted", got.Truncated)
+	}
 }
 
 func TestProtectionReport_Registration(t *testing.T) {
