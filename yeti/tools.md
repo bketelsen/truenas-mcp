@@ -138,6 +138,27 @@ List replication tasks.
 - Task fields: `id`, `name`, `direction` (PUSH/PULL), `transport` (SSH/SSH+NETCAT/LOCAL), `source_datasets`, `target_dataset`, `recursive`, `exclude`, `enabled`, `auto`, `schedule`, `ssh_credentials` (`{"id", "name"}` or null), `periodic_snapshot_task_ids` (ids from `periodic_snapshot_tasks`), `naming_schema`, `also_include_naming_schema`, `readonly`, `encryption` (bool only), `retention` = `{"policy": retention_policy, "value", "unit"}`, `last_run`
 - SECURITY: the entry holds `encryption_key`, `encryption_key_location`, and an `ssh_credentials` keychain credential whose `attributes` can contain a PRIVATE KEY. None of these are in the allow-list. `TestReplicationTaskList_NoSecretLeak` feeds a fixture with a private key and an encryption key and checks they are absent from the result text. When you add a field to this tool, add it to the allow-list deliberately and never copy a whole nested object.
 
+## Protection Report (`tools_protection.go`)
+
+### `truenas_protection_report`
+Report how each dataset is protected, in 1 read-only call. Design and rules: `docs/plans/2026-11-02-protection-report.md`.
+- Parameters (all optional):
+  - `pool` (string) — only datasets of this pool
+  - `dataset` (string) — only this dataset and its descendants; its first path component is the pool. A `pool` that names another pool is an error
+  - `flagged_only` (boolean, `strictBool`) — only datasets with at least 1 flag; the summary still counts the whole scope
+- APIs, in this order: `pool.dataset.query` (filters `[]` or `[["pool","=",P]]`, options `select` + `extra` {`flat`, `properties: ["usedbydataset"]`, `retrieve_user_props: false`}), `pool.snapshottask.query`, `replication.query`, `callSnapshot("query", filters, snapshotQueryOptions())`, `docker.config`. An error in the first 4 is a tool error. A `docker.config` error is ignored: the limits text then says "the apps pool's ix-apps dataset".
+- Rules (zettarepl semantics):
+  - Covers: an enabled snapshot task covers its own dataset, and with `recursive` each descendant that is not an `exclude` entry or below one (`taskCovers`). An excluded dataset lists the task in `excluded_by`.
+  - `replication_tasks`: enabled PUSH replications whose `source_datasets` cover the dataset by the same rule.
+  - `replica_of`: enabled replications with a target on this NAS (`transport` LOCAL, or direction PULL) whose `target_dataset` is the dataset or an ancestor.
+  - Periodic snapshot: a snapshot name that matches the naming schema of any snapshot task, or a replication `naming_schema` / `also_include_naming_schema` (`namingSchemaRegexp`, strftime to an anchored regexp). With no schema anywhere, `auto-%Y-%m-%d_%H-%M`.
+  - Interval: the longest gap between 2 runs of the cron schedule, `begin`/`end` window applied, enumerated over 2027-2028 (`scheduleIntervalMinutes`). Day-of-month and day-of-week are OR when both are restricted (croniter). Timezone-free: the NAS runs schedules in local time, the gap does not depend on it.
+  - `max_age_hours` = 2 x the smallest interval of the covering enabled tasks with `allow_empty` true (for a replica: the replication's periodic snapshot tasks). A task with `allow_empty` false skips unchanged datasets, so it sets no threshold.
+- Flags: `uncovered` (no enabled snapshot task and not a replica), `no_snapshot` (covered or a replica, no periodic snapshot), `stale` (`newest_age_hours` > `max_age_hours`), `task_failing` (a covering task's last run is `ERROR`), `replication_failing`.
+- Output: `{ "summary": {generated_at, status ok|warning, datasets, covered, uncovered, stale, no_snapshot, replicated, replicas, flagged, failing_tasks}, "datasets": [{name, type (VOLUME only), used_by_dataset (IEC text), snapshot_tasks, excluded_by, newest_snapshot (the part after @), newest_age_hours, max_age_hours, replication_tasks, replica_of, flags}], "snapshot_tasks": [...], "replication_tasks": [...], "limits": [3 texts], "truncated"? }`. Empty fields are omitted. Replication rows are an allow-list: no keys and no credentials (`TestProtectionReport_NoSecretLeak`).
+- Size: the text is at most `protectionReportMaxChars` = 36,000 characters (Pi Pocket keeps 40,000). Steps: indented JSON, compact JSON, drop datasets without flags, drop flagged datasets from the end (binary search), drop the task lists. `truncated` says what was left out. `TestProtectionReport_SizeLimit` covers 3,000 datasets.
+- Limit named in the result: `pool.dataset.query` and `pool.snapshot.query` hide internal datasets (`<apps pool>/ix-apps`, `<pool>/.system`), so their protection is not reported. Datasets such as `fast/.ix-virt` are visible and are reported.
+
 ## Share Tools (`tools_share.go`)
 
 ### `truenas_smb_list`

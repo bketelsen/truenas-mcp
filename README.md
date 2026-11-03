@@ -131,6 +131,7 @@ Tools marked with `*` are excluded by default and are registered only with `--en
 | `truenas_snapshot_task_list` | Periodic snapshot tasks with schedule, retention, and last run (optionally for one dataset) |
 | `truenas_snapshot_task_create` | Create a periodic snapshot task with a schedule, retention, and naming schema (refuses a duplicate; `dry_run` returns the payload) `*` |
 | `truenas_replication_task_list` | Replication tasks with source, target, schedule, retention, and last run. Never returns encryption keys or SSH credential secrets |
+| `truenas_protection_report` | Per-dataset protection: covering snapshot tasks (recursive and excludes applied), newest periodic snapshot age, replication; flags uncovered and stale datasets. Optional `pool`, `dataset`, `flagged_only`; result capped under 40,000 characters |
 | `truenas_snapshot_create` | Create a snapshot `*` |
 | `truenas_snapshot_delete` | Delete a snapshot `*` |
 | `truenas_smb_list` | SMB shares |

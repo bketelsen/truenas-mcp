@@ -20,6 +20,7 @@ main.go                  Entry point — uses Charm fang CLI framework
     ├── tools_dataset.go  Dataset list/get/create/delete tools
     ├── tools_snapshot.go Snapshot list/get/create/delete tools
     ├── tools_data_protection.go  Periodic snapshot task and replication task list tools, plus the periodic snapshot task create tool (allow-listed summaries; no secrets)
+    ├── tools_protection.go  Protection report: per-dataset snapshot task coverage, newest periodic snapshot age, replication, flags (read-only; size-capped)
     ├── tools_share.go    SMB and NFS share tools
     ├── tools_alert.go    Alert list/dismiss tools
     ├── tools_reports.go  Aggregated health report and job-list tools
@@ -81,6 +82,8 @@ Tools are split into read and write registration functions per domain:
 Report-style read tools are registered alongside the domain tools: `tools_reports.go` provides the aggregated health report plus job listing, and `tools_app.go` includes the read-only app update report as well as the app update write tools.
 
 Both app read reports are projections, not pass-throughs. `truenas_app_list` maps every `app.query` entry through `summarizeApp` (`server/tools_app.go`) onto `name`, `id`, `state`, `version`, `human_version`, `latest_version`, `latest_app_version`, `upgrade_available`, `image_updates_available`, `custom_app`, `migrated`, `action_required`, `portals`, plus `train` from `metadata.train` and `containers` (the container count) from `active_workloads.containers`; `notes`, `metadata`, `active_workloads` and `config` are dropped, and the entries are sorted by name under `summary.apps_total`. The raw payload was about 104,700 characters for 13 apps, and the Pi Pocket MCP client cuts a tool result at 40,000 characters (first and last 20,000 kept), so on 2026-11-02 only 7 of 13 apps reached the caller. `TestAppList_StaysUnderClientCutoff` in `tools_app_test.go` reproduces that size and pins the result under 40,000 characters. `truenas_app_get` remains the full-detail call for one app.
+
+`truenas_protection_report` (`server/tools_protection.go`) is a Report in the CONTEXT.md sense: it joins `pool.dataset.query`, `pool.snapshottask.query`, `replication.query` and `pool.snapshot.query` on the server and returns one row per dataset. The coverage rules mirror zettarepl: a task covers its own dataset, and with `recursive` every descendant that is not an exclude entry or below one. The size cap is enforced in the tool (`protectionReportMaxChars` = 36,000), because on 2026-11-02 the live NAS had 114 visible datasets and the indented report was about 33,000 characters. The design and its rules are in `docs/plans/2026-11-02-protection-report.md`; see `yeti/tools.md` for the output.
 
 Each tool is defined inline with `s.AddTool(&mcp.Tool{...}, handlerFunc)`. The handler uses typed accessors from `server/params.go` to read MCP arguments, calls the TrueNAS API, and returns pretty-printed JSON.
 
