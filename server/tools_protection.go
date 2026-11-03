@@ -617,7 +617,7 @@ func protectionLimitTexts(appsPool string) []string {
 		"Internal datasets are hidden: pool.dataset.query and pool.snapshot.query leave out " + apps +
 			" (app ix-volumes, app configuration and container images) and system datasets such as <pool>/.system" +
 			". This report cannot see them or their snapshots.",
-		"Schedules run in the NAS's local time. The interval is the longest gap between 2 scheduled runs.",
+		"Schedules run in the NAS's local time. The interval is the longest gap between 2 scheduled runs, counted in UTC, so a daylight-saving change can shift 1 gap by up to 1 hour.",
 		"Replication to another host is listed, but the remote copy is not checked.",
 	}
 }

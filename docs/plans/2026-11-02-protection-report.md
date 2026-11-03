@@ -93,5 +93,6 @@ says what was left out and how to narrow the scope. Summary counts always cover 
    `<apps pool>/ix-apps` (app ix-volumes, app configuration and container images) and system datasets
    such as `<pool>/.system`. The report cannot see them or their snapshots. The apps pool comes from
    `docker.config`; when that call fails the text says "the apps pool".
-2. Schedules run in the NAS's local time. The interval is the longest gap between 2 scheduled runs.
+2. Schedules run in the NAS's local time. The interval is the longest gap between 2 scheduled runs, counted in UTC,
+   so a daylight-saving change can shift 1 gap by up to 1 hour.
 3. Replication to another host is listed, but the remote copy is not checked.

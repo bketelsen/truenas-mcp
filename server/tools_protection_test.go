@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -154,6 +156,50 @@ func TestScheduleIntervalMinutes(t *testing.T) {
 		{
 			name:     "not an object",
 			schedule: "0 0 * * *",
+		},
+		{
+			name:     "two minutes each hour",
+			schedule: map[string]any{"minute": "0,30", "hour": "*"},
+			want:     30, wantOK: true,
+		},
+		{
+			// 08:00, 09:00, 10:00; the longest gap is 10:00 to the next 08:00,
+			// which is 22 hours.
+			name:     "three hours a day",
+			schedule: map[string]any{"minute": "0", "hour": "8-10"},
+			want:     22 * 60, wantOK: true,
+		},
+		{
+			// 00:00, 06:00, 12:00; the longest gap is 12:00 to midnight, 12 hours.
+			name:     "stepped hour range",
+			schedule: map[string]any{"minute": "0", "hour": "0-12/6"},
+			want:     12 * 60, wantOK: true,
+		},
+		{
+			// The 1st of January and July; July 1 to January 1 is 184 days
+			// (31+31+30+31+30+31).
+			name:     "two months by name",
+			schedule: map[string]any{"minute": "0", "hour": "0", "dom": "1", "month": "jan,jul"},
+			want:     184 * 24 * 60, wantOK: true,
+		},
+		{
+			// A restricted day-of-month OR a restricted day-of-week: every
+			// Sunday fires, so no gap exceeds 7 days.
+			name:     "day of month or Sunday",
+			schedule: map[string]any{"minute": "0", "hour": "0", "dom": "15", "dow": "sun"},
+			want:     7 * 24 * 60, wantOK: true,
+		},
+		{
+			// The 15th alone waits up to 31 days; with the OR above it is 7.
+			name:     "day of month alone",
+			schedule: map[string]any{"minute": "0", "hour": "0", "dom": "15"},
+			want:     31 * 24 * 60, wantOK: true,
+		},
+		{
+			// Days 1-7 OR Sunday: every Sunday fires, so 7 days again.
+			name:     "days 1-7 or dow 7",
+			schedule: map[string]any{"minute": "0", "hour": "0", "dom": "1-7", "dow": "7"},
+			want:     7 * 24 * 60, wantOK: true,
 		},
 		{
 			// A step of maxint64 must not overflow: only minute 59 fires.
@@ -1326,4 +1372,642 @@ func TestProtectionReport_Registration(t *testing.T) {
 	if names := listTools(t, fixture.mock(t), true); !slices.Contains(names, "truenas_protection_report") {
 		t.Error("read-only server did not register truenas_protection_report")
 	}
+}
+
+// TestProtectionCronValues pins the expansion of one cron field.
+func TestProtectionCronValues(t *testing.T) {
+	set := func(values ...int) map[int]bool {
+		out := make(map[int]bool, len(values))
+		for _, v := range values {
+			out[v] = true
+		}
+		return out
+	}
+
+	cases := []struct {
+		name  string
+		field string
+		min   int
+		max   int
+		names map[string]int
+		want  map[int]bool
+	}{
+		{"step over the whole range", "*/20", 0, 59, nil, set(0, 20, 40)},
+		{"stepped range", "1-5/2", 0, 59, nil, set(1, 3, 5)},
+		{"weekday names across a range", "mon-fri", 0, 7, protectionWeekdayNames, set(1, 2, 3, 4, 5)},
+		{"month names in a list", "jan,dec", 1, 12, protectionMonthNames, set(1, 12)},
+		{"dow 7 is a value of the field", "7", 0, 7, protectionWeekdayNames, set(7)},
+		{"dow 0 is Sunday", "sun", 0, 7, protectionWeekdayNames, set(0)},
+		{"step from a value", "50/5", 0, 59, nil, set(50, 55)},
+		{"single value", "30", 0, 59, nil, set(30)},
+		{"reversed range", "5-1", 0, 59, nil, nil},
+		{"zero step", "0/0", 0, 59, nil, nil},
+		{"not a number", "abc", 0, 59, nil, nil},
+		{"above the maximum", "60", 0, 59, nil, nil},
+		{"empty list item", "1,,2", 0, 59, nil, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := protectionCronValues(tc.field, tc.min, tc.max, tc.names)
+			if tc.want == nil {
+				if ok {
+					t.Fatalf("%q parsed to %v, want a refusal", tc.field, got)
+				}
+				return
+			}
+			if !ok {
+				t.Fatalf("%q was refused, want %v", tc.field, tc.want)
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("%q = %v, want %v", tc.field, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestScheduleIntervalMinutes_SundayAndDayOfWeek checks that dow 7 is Sunday and
+// that a restricted day-of-month with a restricted day-of-week fires on either.
+func TestScheduleIntervalMinutes_SundayAndDayOfWeek(t *testing.T) {
+	schedule := func(dow string) map[string]any {
+		return map[string]any{"minute": "0", "hour": "0", "dom": "1-7", "dow": dow}
+	}
+
+	seven, okSeven := scheduleIntervalMinutes(schedule("7"))
+	zero, okZero := scheduleIntervalMinutes(schedule("0"))
+	if !okSeven || !okZero {
+		t.Fatalf("dow 7 and dow 0 must both parse: %v, %v", okSeven, okZero)
+	}
+	if seven != zero {
+		t.Errorf("dow 7 gives %d and dow 0 gives %d; 7 must mean Sunday", seven, zero)
+	}
+
+	// The maximum gap alone cannot separate two weekdays, because the monthly
+	// day range already fires every week. The day expansion can: 7, 0, and 1
+	// must be different days.
+	for _, tc := range []struct {
+		field string
+		want  int
+	}{{"0", 0}, {"1", 1}, {"7", 7}} {
+		got, ok := protectionCronValues(tc.field, 0, 7, protectionWeekdayNames)
+		if !ok {
+			t.Fatalf("protectionCronValues(%q) was refused", tc.field)
+		}
+		if !reflect.DeepEqual(got, map[int]bool{tc.want: true}) {
+			t.Errorf("protectionCronValues(%q) = %v, want only %d", tc.field, got, tc.want)
+		}
+	}
+}
+
+// protectionOrderFixture is one dataset under one daily task, with the given
+// snapshots in the given order.
+func protectionOrderFixture(now time.Time, ages ...time.Duration) protectionFixture {
+	snapshots := make([]map[string]any, 0, len(ages))
+	for _, age := range ages {
+		when := now.Add(-age)
+		snapshots = append(snapshots, protectionSnapshotRow("tank/data", protectionAutoName(when), when))
+	}
+	return protectionFixture{
+		datasets:  []map[string]any{protectionDatasetRowFixture("tank/data", "FILESYSTEM", 1024)},
+		tasks:     []map[string]any{protectionTask(1, "tank", true, nil, "0", "0", true, "FINISHED")},
+		snapshots: snapshots,
+	}
+}
+
+// protectionOnlyRow runs the tool on one fixture and returns its only row.
+func protectionOnlyRow(t *testing.T, fixture protectionFixture) protectionDatasetJSON {
+	t.Helper()
+	result, err := callTool(t, fixture.mock(t), true, "truenas_protection_report", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("tool error: %s", resultText(t, result))
+	}
+	got := decodeProtectionReport(t, resultText(t, result))
+	if len(got.Datasets) != 1 {
+		t.Fatalf("%d rows, want 1: %+v", len(got.Datasets), got.Datasets)
+	}
+	return got.Datasets[0]
+}
+
+// TestProtectionReport_NewestSnapshot checks that the newest creation time wins
+// whatever order the middleware sends.
+func TestProtectionReport_NewestSnapshot(t *testing.T) {
+	fixProtectionNow(t, protectionTestNow)
+
+	oneHour, fiveHours, fiftyFourHours := time.Hour, 5*time.Hour, 54*time.Hour
+	row := protectionOnlyRow(t, protectionOrderFixture(protectionTestNow, fiftyFourHours, oneHour, fiveHours))
+
+	want := protectionAutoName(protectionTestNow.Add(-oneHour))
+	if row.NewestSnapshot != want {
+		t.Errorf("newest_snapshot = %q, want %q", row.NewestSnapshot, want)
+	}
+	if row.NewestAgeHours == nil || *row.NewestAgeHours != 1 {
+		t.Errorf("newest_age_hours = %v, want 1", row.NewestAgeHours)
+	}
+	if len(row.Flags) != 0 {
+		t.Errorf("flags = %v, want none", row.Flags)
+	}
+
+	// The same snapshots in another order give the same answer.
+	again := protectionOnlyRow(t, protectionOrderFixture(protectionTestNow, fiveHours, fiftyFourHours, oneHour))
+	if again.NewestSnapshot != want {
+		t.Errorf("newest_snapshot = %q, want %q in any order", again.NewestSnapshot, want)
+	}
+}
+
+// TestProtectionReport_MaxAgeRules checks the freshness threshold: the smallest
+// covering interval wins, and a task without allow_empty sets no threshold.
+func TestProtectionReport_MaxAgeRules(t *testing.T) {
+	fixProtectionNow(t, protectionTestNow)
+
+	t.Run("hourly and daily tasks", func(t *testing.T) {
+		fixture := protectionOrderFixture(protectionTestNow, time.Hour) // fresh, age 1 h
+		hourly := protectionTask(2, "tank", true, nil, "*", "0", true, "FINISHED")
+		fixture.tasks = append(fixture.tasks, hourly)
+
+		row := protectionOnlyRow(t, fixture)
+		if !slices.Equal(row.SnapshotTasks, []int{1, 2}) {
+			t.Fatalf("snapshot_tasks = %v, want [1 2]", row.SnapshotTasks)
+		}
+		// 2 x the smallest interval: 60 minutes -> 2 hours.
+		if row.MaxAgeHours == nil || *row.MaxAgeHours != 2 {
+			t.Errorf("max_age_hours = %v, want 2", row.MaxAgeHours)
+		}
+		if len(row.Flags) != 0 {
+			t.Errorf("flags = %v, want none", row.Flags)
+		}
+	})
+
+	t.Run("allow_empty false", func(t *testing.T) {
+		fixture := protectionOrderFixture(protectionTestNow, 10*24*time.Hour) // very old
+		fixture.tasks[0]["allow_empty"] = false
+
+		row := protectionOnlyRow(t, fixture)
+		if !slices.Equal(row.SnapshotTasks, []int{1}) {
+			t.Fatalf("snapshot_tasks = %v, want [1]", row.SnapshotTasks)
+		}
+		if row.MaxAgeHours != nil {
+			t.Errorf("max_age_hours = %v, want it omitted for a task without allow_empty", *row.MaxAgeHours)
+		}
+		if slices.Contains(row.Flags, "stale") {
+			t.Errorf("flags = %v, want no stale without a threshold", row.Flags)
+		}
+	})
+}
+
+// TestProtectionReport_ReplicationRules checks which replicas and which copies
+// the report counts.
+func TestProtectionReport_ReplicationRules(t *testing.T) {
+	fixProtectionNow(t, protectionTestNow)
+
+	fresh := protectionTestNow.Add(-time.Hour)
+	newFixture := func() protectionFixture {
+		return protectionFixture{
+			datasets: []map[string]any{
+				protectionDatasetRowFixture("tank/data", "FILESYSTEM", 1024),       // local source
+				protectionDatasetRowFixture("tank/copy", "FILESYSTEM", 1024),       // same name as a remote target
+				protectionDatasetRowFixture("tank/restored", "FILESYSTEM", 1024),   // local PULL target
+				protectionDatasetRowFixture("tank/remote-source", "FILESYSTEM", 0), // PULL source
+				protectionDatasetRowFixture("tank/idle", "FILESYSTEM", 0),          // disabled replication target
+			},
+			tasks: []map[string]any{
+				protectionTask(1, "tank/data", true, nil, "0", "0", true, "FINISHED"),
+				// An hourly task that no dataset in this fixture sits under; a
+				// replication uses it as its periodic snapshot task.
+				protectionTask(3, "other/data", true, nil, "*", "0", true, "FINISHED"),
+			},
+			snapshots: []map[string]any{
+				protectionSnapshotRow("tank/data", protectionAutoName(fresh), fresh),
+				protectionSnapshotRow("tank/restored", protectionAutoName(fresh), fresh),
+			},
+		}
+	}
+
+	rows := func(t *testing.T, fixture protectionFixture) map[string]protectionDatasetJSON {
+		t.Helper()
+		result, err := callTool(t, fixture.mock(t), true, "truenas_protection_report", nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result.IsError {
+			t.Fatalf("tool error: %s", resultText(t, result))
+		}
+		got := decodeProtectionReport(t, resultText(t, result))
+		byName := map[string]protectionDatasetJSON{}
+		for _, row := range got.Datasets {
+			byName[row.Name] = row
+		}
+		return byName
+	}
+
+	t.Run("SSH PUSH copies but is not a local replica", func(t *testing.T) {
+		fixture := newFixture()
+		replication := protectionReplicationFixture(1, "to the remote host", []string{"tank/data"}, "tank/copy", true, nil, 1, "FINISHED")
+		replication["transport"] = "SSH"
+		fixture.replications = []map[string]any{replication}
+
+		byName := rows(t, fixture)
+		if got := byName["tank/data"].ReplicationTasks; !slices.Equal(got, []int{1}) {
+			t.Errorf("tank/data replication_tasks = %v, want [1]", got)
+		}
+		if got := byName["tank/copy"].ReplicaOf; len(got) != 0 {
+			t.Errorf("tank/copy replica_of = %v, want none for a remote target", got)
+		}
+		if got := byName["tank/copy"].Flags; !slices.Equal(got, []string{"uncovered"}) {
+			t.Errorf("tank/copy flags = %v, want [uncovered]", got)
+		}
+	})
+
+	t.Run("PULL makes the local target a replica", func(t *testing.T) {
+		fixture := newFixture()
+		replication := protectionReplicationFixture(2, "from the remote host",
+			[]string{"tank/remote-source"}, "tank/restored", true, nil, 3, "FINISHED")
+		replication["direction"] = "PULL"
+		fixture.replications = []map[string]any{replication}
+
+		byName := rows(t, fixture)
+		restored := byName["tank/restored"]
+		if got := restored.ReplicaOf; !slices.Equal(got, []int{2}) {
+			t.Errorf("tank/restored replica_of = %v, want [2]", got)
+		}
+		if got := restored.ReplicationTasks; len(got) != 0 {
+			t.Errorf("tank/restored replication_tasks = %v, want none for a PULL target", got)
+		}
+		// The threshold of a replica comes from the replication's periodic task
+		// (task 3, hourly), not from a covering snapshot task.
+		if restored.MaxAgeHours == nil || *restored.MaxAgeHours != 2 {
+			t.Errorf("tank/restored max_age_hours = %v, want 2", restored.MaxAgeHours)
+		}
+		if len(restored.Flags) != 0 {
+			t.Errorf("tank/restored flags = %v, want none", restored.Flags)
+		}
+		// The source of a PULL is not copied by a local PUSH task.
+		if got := byName["tank/remote-source"].ReplicationTasks; len(got) != 0 {
+			t.Errorf("tank/remote-source replication_tasks = %v, want none", got)
+		}
+	})
+
+	t.Run("disabled LOCAL PUSH has no effect", func(t *testing.T) {
+		fixture := newFixture()
+		replication := protectionReplicationFixture(4, "paused copy", []string{"tank/data"}, "tank/idle", true, nil, 1, "FINISHED")
+		replication["enabled"] = false
+		fixture.replications = []map[string]any{replication}
+
+		byName := rows(t, fixture)
+		if got := byName["tank/data"].ReplicationTasks; len(got) != 0 {
+			t.Errorf("tank/data replication_tasks = %v, want none for a disabled task", got)
+		}
+		if got := byName["tank/idle"].ReplicaOf; len(got) != 0 {
+			t.Errorf("tank/idle replica_of = %v, want none for a disabled task", got)
+		}
+	})
+}
+
+// protectionMixedSizeFixture builds count datasets under one recursive task.
+// Every 10th dataset sits outside the task, so it is uncovered and flagged; the
+// others are fresh and covered. It returns the sorted flagged names.
+func protectionMixedSizeFixture(now time.Time, count int) (protectionFixture, []string) {
+	fresh := now.Add(-time.Hour)
+	datasets := make([]map[string]any, 0, count)
+	snapshots := make([]map[string]any, 0, count)
+	flagged := make([]string, 0, count/10)
+	for i := 0; i < count; i++ {
+		name := fmt.Sprintf("tank/data/ds%04d", i)
+		if i%10 == 0 {
+			name = fmt.Sprintf("tank/out%04d", i)
+			flagged = append(flagged, name)
+		} else {
+			snapshots = append(snapshots, protectionSnapshotRow(name, protectionAutoName(fresh), fresh))
+		}
+		datasets = append(datasets, map[string]any{"id": name, "name": name, "type": "FILESYSTEM", "pool": "tank"})
+	}
+	sort.Strings(flagged)
+	return protectionFixture{
+		datasets:  datasets,
+		tasks:     []map[string]any{protectionTask(1, "tank/data", true, nil, "0", "0", true, "FINISHED")},
+		snapshots: snapshots,
+		appsPool:  "tank",
+	}, flagged
+}
+
+// protectionAllFlaggedSizeFixture builds count long-named datasets outside the
+// task, so every one of them is uncovered, and returns their sorted names.
+func protectionAllFlaggedSizeFixture(now time.Time, count int) (protectionFixture, []string) {
+	datasets := make([]map[string]any, 0, count)
+	names := make([]string, 0, count)
+	for i := 0; i < count; i++ {
+		name := fmt.Sprintf("tank/outside/dataset%04d", i)
+		names = append(names, name)
+		datasets = append(datasets, map[string]any{"id": name, "name": name, "type": "FILESYSTEM", "pool": "tank"})
+	}
+	sort.Strings(names)
+	return protectionFixture{
+		datasets: datasets,
+		tasks:    []map[string]any{protectionTask(1, "tank/data", true, nil, "0", "0", true, "FINISHED")},
+	}, names
+}
+
+// protectionManyTasksFixture builds 600 snapshot tasks and 600 replications with
+// long dataset names, so the task lists alone are over the size limit.
+func protectionManyTasksFixture(count int) protectionFixture {
+	tasks := make([]map[string]any, 0, count)
+	replications := make([]map[string]any, 0, count)
+	for i := 0; i < count; i++ {
+		dataset := fmt.Sprintf("tank/a-very-long-dataset-name-for-the-task-%04d", i)
+		tasks = append(tasks, protectionTask(i+1, dataset, true, nil, "0", "0", true, "FINISHED"))
+		replications = append(replications, protectionReplicationFixture(i+1,
+			fmt.Sprintf("a-very-long-replication-name-number-%04d", i),
+			[]string{dataset}, dataset+"-replica", true, nil, i+1, "FINISHED"))
+	}
+	datasets := make([]map[string]any, 0, 5)
+	for i := 0; i < 5; i++ {
+		name := fmt.Sprintf("tank/short%02d", i)
+		datasets = append(datasets, map[string]any{"id": name, "name": name, "type": "FILESYSTEM", "pool": "tank"})
+	}
+	return protectionFixture{
+		datasets:     datasets,
+		tasks:        tasks,
+		replications: replications,
+		appsPool:     "tank",
+	}
+}
+
+var (
+	protectionUnflaggedLeftOut = regexp.MustCompile(`(\d+) datasets without flags are left out`)
+	protectionFlaggedLeftOut   = regexp.MustCompile(`(\d+) flagged datasets are left out`)
+)
+
+// protectionTruncatedCounts reads the counts out of the truncated text; a count
+// that the text does not mention is 0.
+func protectionTruncatedCounts(t *testing.T, truncated string) (unflagged, flagged int) {
+	t.Helper()
+	read := func(re *regexp.Regexp) int {
+		match := re.FindStringSubmatch(truncated)
+		if match == nil {
+			return 0
+		}
+		n, err := strconv.Atoi(match[1])
+		if err != nil {
+			t.Fatalf("count %q in %q is not a number: %v", match[1], truncated, err)
+		}
+		return n
+	}
+	return read(protectionUnflaggedLeftOut), read(protectionFlaggedLeftOut)
+}
+
+// protectionRowNames lists the dataset names of a report.
+func protectionRowNames(got protectionReportJSON) []string {
+	names := make([]string, 0, len(got.Datasets))
+	for _, row := range got.Datasets {
+		names = append(names, row.Name)
+	}
+	return names
+}
+
+// TestProtectionReport_SizeMixed checks the size steps against a mixed fixture:
+// the rows without flags go first, the rows that stay are flagged and in name
+// order, and the counts add up.
+func TestProtectionReport_SizeMixed(t *testing.T) {
+	fixProtectionNow(t, protectionTestNow)
+
+	t.Run("every 10th dataset is flagged", func(t *testing.T) {
+		const total = 2000
+		fixture, flaggedNames := protectionMixedSizeFixture(protectionTestNow, total)
+
+		result, err := callTool(t, fixture.mock(t), true, "truenas_protection_report", nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		text := resultText(t, result)
+		if len(text) > protectionReportMaxChars {
+			t.Fatalf("result is %d characters, want at most %d", len(text), protectionReportMaxChars)
+		}
+		got := decodeProtectionReport(t, text)
+		if got.Summary.Datasets != total {
+			t.Errorf("summary.datasets = %d, want %d", got.Summary.Datasets, total)
+		}
+
+		for _, row := range got.Datasets {
+			if len(row.Flags) == 0 {
+				t.Errorf("%s is retained without flags", row.Name)
+			}
+		}
+		kept := protectionRowNames(got)
+		if len(kept) > len(flaggedNames) {
+			t.Fatalf("%d rows are retained, but only %d are flagged", len(kept), len(flaggedNames))
+		}
+		if want := flaggedNames[:len(kept)]; !slices.Equal(kept, want) {
+			t.Errorf("retained names are not the first %d flagged names in order", len(kept))
+		}
+		if got.Truncated == "" {
+			t.Fatal("truncated is empty")
+		}
+		unflagged, flagged := protectionTruncatedCounts(t, got.Truncated)
+		if want := total - len(flaggedNames); unflagged != want {
+			t.Errorf("truncated says %d rows without flags are left out, want %d", unflagged, want)
+		}
+		if flagged != len(flaggedNames)-len(kept) {
+			t.Errorf("truncated says %d flagged rows are left out, want %d", flagged, len(flaggedNames)-len(kept))
+		}
+		if keptCount := len(kept) + unflagged + flagged; keptCount != total {
+			t.Errorf("kept %d + %d unflagged + %d flagged = %d, want %d",
+				len(kept), unflagged, flagged, keptCount, total)
+		}
+	})
+
+	t.Run("all 2000 datasets are flagged", func(t *testing.T) {
+		const total = 2000
+		fixture, names := protectionAllFlaggedSizeFixture(protectionTestNow, total)
+
+		result, err := callTool(t, fixture.mock(t), true, "truenas_protection_report", nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		text := resultText(t, result)
+		if len(text) > protectionReportMaxChars {
+			t.Fatalf("result is %d characters, want at most %d", len(text), protectionReportMaxChars)
+		}
+		got := decodeProtectionReport(t, text)
+		kept := protectionRowNames(got)
+		if len(kept) == 0 || len(kept) >= total {
+			t.Fatalf("%d rows are retained, want some but fewer than %d", len(kept), total)
+		}
+		for _, row := range got.Datasets {
+			if len(row.Flags) == 0 {
+				t.Errorf("%s is retained without flags", row.Name)
+			}
+		}
+		if want := names[:len(kept)]; !slices.Equal(kept, want) {
+			t.Errorf("retained names are not the first %d names in order", len(kept))
+		}
+		unflagged, flagged := protectionTruncatedCounts(t, got.Truncated)
+		if unflagged != 0 {
+			t.Errorf("truncated says %d rows without flags are left out, want 0", unflagged)
+		}
+		if want := total - len(kept); flagged != want {
+			t.Errorf("truncated says %d flagged rows are left out, want %d", flagged, want)
+		}
+		if keptCount := len(kept) + unflagged + flagged; keptCount != total {
+			t.Errorf("kept %d + %d unflagged + %d flagged = %d, want %d",
+				len(kept), unflagged, flagged, keptCount, total)
+		}
+	})
+
+	t.Run("the task lists are removed", func(t *testing.T) {
+		fixture := protectionManyTasksFixture(600)
+
+		result, err := callTool(t, fixture.mock(t), true, "truenas_protection_report", nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		text := resultText(t, result)
+		if len(text) > protectionReportMaxChars {
+			t.Fatalf("result is %d characters, want at most %d", len(text), protectionReportMaxChars)
+		}
+		got := decodeProtectionReport(t, text)
+		if len(got.SnapshotTasks) != 0 {
+			t.Errorf("%d snapshot task rows, want none", len(got.SnapshotTasks))
+		}
+		if len(got.ReplicationTasks) != 0 {
+			t.Errorf("%d replication rows, want none", len(got.ReplicationTasks))
+		}
+		if !strings.Contains(got.Truncated, "the task lists are left out") {
+			t.Errorf("truncated = %q, want it to name the task lists", got.Truncated)
+		}
+		unflagged, flagged := protectionTruncatedCounts(t, got.Truncated)
+		if kept := len(got.Datasets) + unflagged + flagged; kept != got.Summary.Datasets {
+			t.Errorf("kept %d + %d unflagged + %d flagged = %d, want %d",
+				len(got.Datasets), unflagged, flagged, kept, got.Summary.Datasets)
+		}
+	})
+}
+
+// TestProtectionReport_OptionMaps pins the complete option maps the tool sends.
+func TestProtectionReport_OptionMaps(t *testing.T) {
+	fixProtectionNow(t, protectionTestNow)
+	calls := &protectionCalls{}
+	fixture := protectionBaseFixture(protectionTestNow)
+
+	if _, err := callTool(t, fixture.mockRecording(t, calls), true, "truenas_protection_report",
+		map[string]any{"pool": "big"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, tc := range []struct {
+		method string
+		want   map[string]any
+	}{
+		{"pool.dataset.query", protectionDatasetQueryOptions()},
+		{"pool.snapshot.query", snapshotQueryOptions()},
+	} {
+		params := calls.params[tc.method]
+		if len(params) != 2 {
+			t.Fatalf("%s params = %v, want filters and options", tc.method, params)
+		}
+		want, err := json.Marshal(tc.want)
+		if err != nil {
+			t.Fatalf("marshal want options: %v", err)
+		}
+		assertSameJSON(t, params[1], string(want))
+	}
+
+	// The snapshot options must ask for the creation time, or every age is
+	// unknown.
+	options := calls.params["pool.snapshot.query"][1].(map[string]any)
+	extra, ok := options["extra"].(map[string]any)
+	if !ok {
+		t.Fatalf("snapshot options extra = %v, want an object", options["extra"])
+	}
+	properties, ok := extra["properties"].([]string)
+	if !ok || !slices.Contains(properties, "creation") {
+		t.Errorf("snapshot options properties = %v, want creation", extra["properties"])
+	}
+}
+
+// TestProtectionReport_MalformedAnswers checks that a broken middleware answer
+// gives a controlled error or an empty report, and never a panic.
+func TestProtectionReport_MalformedAnswers(t *testing.T) {
+	fixProtectionNow(t, protectionTestNow)
+
+	t.Run("wrong top-level type", func(t *testing.T) {
+		methods := []struct {
+			method string
+			label  string
+		}{
+			{"pool.dataset.query", "pool.dataset.query"},
+			{"pool.snapshottask.query", "pool.snapshottask.query"},
+			{"replication.query", "replication.query"},
+			{"pool.snapshot.query", "snapshot.query"},
+		}
+		bodies := []struct {
+			name string
+			body string
+		}{
+			{"an object", `{"not": "a list"}`},
+			{"a string", `"not a list"`},
+		}
+		for _, m := range methods {
+			for _, b := range bodies {
+				t.Run(m.method+" as "+b.name, func(t *testing.T) {
+					fixture := protectionBaseFixture(protectionTestNow)
+					inner := fixture.mock(t)
+					mock := &mockCaller{CallFunc: func(called string, params ...interface{}) (json.RawMessage, error) {
+						if called == m.method {
+							return json.RawMessage(b.body), nil
+						}
+						return inner.Call(called, params...)
+					}}
+					result, err := callTool(t, mock, true, "truenas_protection_report", nil)
+					text := toolError(t, result, err)
+					if !strings.Contains(text, "parsing") || !strings.Contains(text, m.label) {
+						t.Errorf("error text = %q, want a parse error naming %q", text, m.label)
+					}
+				})
+			}
+		}
+	})
+
+	t.Run("bad rows and field types", func(t *testing.T) {
+		fixture := protectionFixture{
+			datasets: []map[string]any{
+				nil, // a null row
+				{"name": "tank/data", "type": "FILESYSTEM", "children": 5, "usedbydataset": 7},
+				{"id": "tank/other", "name": 5},
+			},
+			tasks: []map[string]any{
+				nil,
+				{"id": "abc", "dataset": "tank"},
+				{"id": 1.0, "dataset": "tank", "recursive": "yes", "exclude": "x",
+					"schedule": []any{}, "enabled": "true", "state": 5},
+			},
+			replications: []map[string]any{
+				nil,
+				{"id": 2.0, "source_datasets": "x", "periodic_snapshot_tasks": 5,
+					"target_dataset": 7, "state": map[string]any{"state": 5}},
+			},
+			snapshots: []map[string]any{
+				nil,
+				{"name": "tank/data@auto-2026-11-20_11-00", "properties": 7},
+				{"id": 5.0, "properties": map[string]any{"creation": map[string]any{"parsed": "x"}}},
+			},
+		}
+
+		result, err := callTool(t, fixture.mock(t), true, "truenas_protection_report", nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result.IsError {
+			t.Fatalf("tool error: %s", resultText(t, result))
+		}
+		got := decodeProtectionReport(t, resultText(t, result))
+		if got.Summary.Datasets != 2 {
+			t.Errorf("summary.datasets = %d, want 2 (tank/data and tank/other)", got.Summary.Datasets)
+		}
+		for _, row := range got.Datasets {
+			if row.NewestAgeHours != nil {
+				t.Errorf("%s has newest_age_hours %v, want none without a creation time", row.Name, *row.NewestAgeHours)
+			}
+		}
+	})
 }
