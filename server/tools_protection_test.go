@@ -1624,6 +1624,8 @@ func TestProtectionReport_ReplicationRules(t *testing.T) {
 		replication := protectionReplicationFixture(2, "from the remote host",
 			[]string{"tank/remote-source"}, "tank/restored", true, nil, 3, "FINISHED")
 		replication["direction"] = "PULL"
+		// SSH, not LOCAL: the PULL direction alone must make the target local.
+		replication["transport"] = "SSH"
 		fixture.replications = []map[string]any{replication}
 
 		byName := rows(t, fixture)
@@ -1898,8 +1900,19 @@ func TestProtectionReport_OptionMaps(t *testing.T) {
 		method string
 		want   map[string]any
 	}{
-		{"pool.dataset.query", protectionDatasetQueryOptions()},
-		{"pool.snapshot.query", snapshotQueryOptions()},
+		// Literal maps, not the production helpers, so a change in a helper
+		// fails here.
+		{"pool.dataset.query", map[string]any{
+			"select": []string{"id", "name", "type", "pool", "usedbydataset"},
+			"extra": map[string]any{
+				"flat":                true,
+				"properties":          []string{"usedbydataset"},
+				"retrieve_user_props": false,
+			},
+		}},
+		{"pool.snapshot.query", map[string]any{
+			"extra": map[string]any{"properties": []string{"creation", "used", "referenced"}},
+		}},
 	} {
 		params := calls.params[tc.method]
 		if len(params) != 2 {

@@ -56,7 +56,7 @@ works whether or not a release honours `flat` and `select`.
 |---|---|
 | `uncovered` | no enabled snapshot task covers it, and it is not a replica |
 | `no_snapshot` | covered or a replica, and no periodic snapshot exists |
-| `stale` | `newest_age_hours` > `max_age_hours` |
+| `stale` | the unrounded age in minutes > 2 x the selected interval in minutes (the displayed hours are rounded) |
 | `task_failing` | a covering enabled snapshot task has last run state `ERROR` |
 | `replication_failing` | an enabled replication in `replication_tasks` or `replica_of` has last run state `ERROR` |
 
