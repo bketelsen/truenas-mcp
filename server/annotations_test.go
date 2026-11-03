@@ -30,6 +30,7 @@ var wantToolHints = map[string]toolHints{
 	"truenas_snapshot_get":          {readOnly: true},
 	"truenas_snapshot_task_list":    {readOnly: true},
 	"truenas_replication_task_list": {readOnly: true},
+	"truenas_protection_report":     {readOnly: true},
 	"truenas_smb_list":              {readOnly: true},
 	"truenas_nfs_list":              {readOnly: true},
 	"truenas_alert_list":            {readOnly: true},

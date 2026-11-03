@@ -54,8 +54,12 @@ one up in `core.get_methods` (keys are method names; each value has `accepts`, `
 | `pool.snapshottask.create` | `truenas_snapshot_task_create` | present | 1 object: `dataset`, `recursive`, `exclude`, `lifetime_value`, `lifetime_unit` (upper-case enum), `naming_schema`, `schedule` (minute, hour, dom, month, dow, begin, end), `allow_empty`, `enabled` | OK (schema + middleware source, not called live) |
 | `replication.query` | `truenas_replication_task_list` | present | none | OK (schema + middleware source, not called live) |
 | `app.delete` | `truenas_app_delete` | present (job) | `app_name`, `{remove_images, remove_ix_volumes, force_remove_custom_app}` | OK (schema + middleware source, not called live) |
+| `pool.dataset.query` (options) | `truenas_protection_report` | present | filters `[]` or `pool =`; options `select` [`id`,`name`,`type`,`pool`,`usedbydataset`], `extra` {`flat`: true, `properties`: [`usedbydataset`], `retrieve_user_props`: false} | OK (live, read-only build, 2026-11-02) |
+| `docker.config` | `truenas_protection_report` (apps pool for the limits text; an error is ignored) | present | none | OK (live, read-only build, 2026-11-02) |
 
-The last 4 rows (`pool.snapshottask.query`, `pool.snapshottask.create`, `replication.query`, `app.delete`) were added after the audit. They were checked against the `v25_10_0` and `v27_0_0` API models in truenas/middleware (`PeriodicSnapshotTaskEntry`, `PeriodicSnapshotTaskCreate`, `ReplicationEntry`, `AppDelete`), not against a live NAS. `pool.snapshottask.create` was never called, because it writes.
+The 4 rows from `pool.snapshottask.query` to `app.delete` (`pool.snapshottask.query`, `pool.snapshottask.create`, `replication.query`, `app.delete`) were added after the audit. They were checked against the `v25_10_0` and `v27_0_0` API models in truenas/middleware (`PeriodicSnapshotTaskEntry`, `PeriodicSnapshotTaskCreate`, `ReplicationEntry`, `AppDelete`), not against a live NAS. `pool.snapshottask.create` was never called, because it writes.
+
+The last 2 rows were added for `truenas_protection_report` (2026-11-02). They were called live, read-only, on 27.0.0-RC.1 by a build of the tool without `--enable-writes`, together with `pool.snapshottask.query`, `replication.query` and `pool.snapshot.query` (no filter, `extra.properties` [`creation`]): 114 datasets, about 33,000 characters, in about 1 second. The dataset options follow `pool.dataset.query` in `plugins/pool_/dataset.py` (master); the tool walks nested `children` too, so a release that ignores `flat` or `select` still works.
 
 ## Gaps and fixes
 
