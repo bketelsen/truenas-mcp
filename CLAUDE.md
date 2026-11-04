@@ -55,7 +55,7 @@ Connection recovery is implemented in `truenas/client.go`: probe before operatio
 
 ## Build and release
 
-`make build` writes `build/truenas-mcp` with version metadata from `git describe` injected into the `version` package via ldflags; never hardcode a version. `make verify` is the credential-free gate (tidy diff, vet, gofmt, pinned golangci-lint from `mise.toml`, tests). Releases: `make bump` tags `svu next` and pushes; `.github/workflows/release.yml` runs GoReleaser Pro; `snapshot.yml` republishes the `dev` pre-release after each green `CI` on `main`. Commit messages must follow Conventional Commits because svu and the changelog depend on them. Details in `yeti/OVERVIEW.md` under "Release Pipeline".
+`make build` writes `build/truenas-mcp` with version metadata from `git describe` injected into the `version` package via ldflags; never hardcode a version. `make verify` is the credential-free gate (tidy diff, vet, gofmt, pinned golangci-lint from `mise.toml`, tests). The gofmt check is `scripts/check-gofmt.sh`, which fails on a gofmt error and on an empty file list, with its self-test `scripts/check-gofmt_test.sh`. Releases: `make bump` tags `svu next` and pushes; `.github/workflows/release.yml` runs GoReleaser Pro; `snapshot.yml` republishes the `dev` pre-release after each green `CI` on `main`. Commit messages must follow Conventional Commits because svu and the changelog depend on them. Details in `yeti/OVERVIEW.md` under "Release Pipeline".
 
 ## Releases and dependencies
 

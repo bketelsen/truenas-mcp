@@ -220,7 +220,7 @@ GitHub Actions workflow `.github/workflows/ci.yml` (named `CI`) runs on push to 
 | Job | What it does |
 |-----|-------------|
 | `lint` | Installs the `golangci-lint` pinned in `mise.toml`/`mise.lock` via `jdx/mise-action`, runs `make lint-version-check`, then `golangci-lint run` |
-| `verify` | `go mod tidy -diff`, `go vet`, `gofmt -s -l` on tracked Go files |
+| `verify` | `go mod tidy -diff`, `go vet`, `scripts/check-gofmt.sh` (fails on a gofmt error or an empty file list) and `scripts/check-gofmt_test.sh` |
 | `test` | `make test` (`-race -count=1`) |
 | `build` | `make build` matrix: linux/amd64, linux/arm64, darwin/arm64, windows/amd64 |
 | `release-config` | `goreleaser check` with the Pro distribution; fails on trusted runs if `GORELEASER_KEY` is missing, warns on fork PRs |
@@ -252,6 +252,7 @@ make run          # build and run `serve`
 make test         # run tests with race detector
 make lint         # pinned golangci-lint (refuses a mismatched version)
 make verify       # static checks + tests (credential-free gate)
+make test-scripts # run the gofmt check self-test
 make ci           # verify-static + race tests + cross-builds
 make help         # list all targets
 ```

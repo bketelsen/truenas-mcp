@@ -71,7 +71,10 @@ jobs:
         run: go vet ./...
 
       - name: Check formatting
-        run: test -z "$(gofmt -s -l $(git ls-files '*.go'))"
+        run: ./scripts/check-gofmt.sh
+
+      - name: Test the gofmt check
+        run: ./scripts/check-gofmt_test.sh
 
   test:
     name: Tests

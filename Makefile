@@ -1,4 +1,4 @@
-.PHONY: all build install run clean fmt vet lint lint-version-check test test-cover tidy check verify-static verify ci completions manpages release-check snapshot bump help
+.PHONY: all build install run clean fmt vet lint lint-version-check test test-cover tidy check verify-static verify ci test-scripts completions manpages release-check snapshot bump help
 
 # Build variables
 BINARY     := truenas-mcp
@@ -102,7 +102,9 @@ verify-static:
 	@echo "==> verify: go vet"
 	$(GO) vet ./...
 	@echo "==> verify: gofmt"
-	test -z "$$($(GOFMT) -s -l $$(git ls-files '*.go'))"
+	GOFMT=$(GOFMT) ./scripts/check-gofmt.sh
+	@echo "==> verify: gofmt check self-test"
+	./scripts/check-gofmt_test.sh
 	@echo "==> lint (golangci-lint $(GOLANGCI_LINT_VERSION))"
 	$(MAKE) lint-version-check
 	golangci-lint run
@@ -111,6 +113,10 @@ verify-static:
 verify: verify-static
 	@echo "==> tests"
 	$(GO) test -count=1 ./...
+
+## test-scripts: Run the shell script self-tests
+test-scripts:
+	./scripts/check-gofmt_test.sh
 
 ## ci: Run the credential-free CI gate (verify-static, then race tests and cross-build)
 ci: verify-static
