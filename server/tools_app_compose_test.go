@@ -838,7 +838,7 @@ func TestWaitForComposeJob_CancelledBeforeFirstPoll(t *testing.T) {
 	cancel()
 
 	mock, polls := pollCountingMock(t, "RUNNING", nil)
-	outcome := waitForComposeJob(ctx, mock, 1, time.Minute)
+	outcome := waitForJob(ctx, mock, 1, time.Minute)
 
 	if !outcome.Cancelled {
 		t.Error("a cancelled context must end the wait as cancelled")
@@ -856,7 +856,7 @@ func TestWaitForComposeJob_CancelledBetweenPolls(t *testing.T) {
 	// then end at once instead of sleeping out the interval.
 	mock, polls := pollCountingMock(t, "RUNNING", cancel)
 	start := time.Now()
-	outcome := waitForComposeJob(ctx, mock, 1, time.Minute)
+	outcome := waitForJob(ctx, mock, 1, time.Minute)
 	elapsed := time.Since(start)
 
 	if !outcome.Cancelled {
@@ -877,7 +877,7 @@ func TestWaitForComposeJob_NoPollAfterDeadline(t *testing.T) {
 
 	mock, polls := pollCountingMock(t, "RUNNING", nil)
 	start := time.Now()
-	outcome := waitForComposeJob(t.Context(), mock, 1, 20*time.Millisecond)
+	outcome := waitForJob(t.Context(), mock, 1, 20*time.Millisecond)
 	elapsed := time.Since(start)
 
 	if outcome.Cancelled {
@@ -900,7 +900,7 @@ func TestWaitForComposeJob_PollsUntilDeadline(t *testing.T) {
 	t.Cleanup(func() { jobPollInterval = old })
 
 	mock, polls := pollCountingMock(t, "RUNNING", nil)
-	outcome := waitForComposeJob(t.Context(), mock, 1, 50*time.Millisecond)
+	outcome := waitForJob(t.Context(), mock, 1, 50*time.Millisecond)
 
 	if outcome.Cancelled {
 		t.Error("a timeout is not a cancellation")
@@ -990,7 +990,7 @@ func TestWaitForComposeJob_CancelWhilePollBlocks(t *testing.T) {
 	}()
 
 	start := time.Now()
-	outcome := waitForComposeJob(ctx, mock, 1, time.Minute)
+	outcome := waitForJob(ctx, mock, 1, time.Minute)
 	elapsed := time.Since(start)
 
 	if !outcome.Cancelled {
@@ -1021,7 +1021,7 @@ func TestWaitForComposeJob_DeadlineWhilePollBlocks(t *testing.T) {
 	}}
 
 	start := time.Now()
-	outcome := waitForComposeJob(t.Context(), mock, 1, 50*time.Millisecond)
+	outcome := waitForJob(t.Context(), mock, 1, 50*time.Millisecond)
 	elapsed := time.Since(start)
 
 	if outcome.Cancelled {

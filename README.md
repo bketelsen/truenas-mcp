@@ -130,6 +130,7 @@ Tools marked with `*` are excluded by default and are registered only with `--en
 | `truenas_snapshot_get` | Snapshot details |
 | `truenas_snapshot_task_list` | Periodic snapshot tasks with schedule, retention, and last run (optionally for one dataset) |
 | `truenas_snapshot_task_create` | Create a periodic snapshot task with a schedule, retention, and naming schema (refuses a duplicate; `dry_run` returns the payload) `*` |
+| `truenas_snapshot_task_run` | Run 1 periodic snapshot task now ("Run Now"). Dry run by default; `confirm: true` runs it once, waits for the run, and verifies the snapshot. Needs the `SNAPSHOT_TASK_WRITE` role `*` |
 | `truenas_replication_task_list` | Replication tasks with source, target, schedule, retention, and last run. Never returns encryption keys or SSH credential secrets |
 | `truenas_protection_report` | Per-dataset protection: covering snapshot tasks (recursive and excludes applied), newest periodic snapshot age, replication; flags uncovered and stale datasets. Optional `pool`, `dataset`, `flagged_only`; result capped under 40,000 characters |
 | `truenas_snapshot_create` | Create a snapshot `*` |
@@ -178,6 +179,7 @@ Every tool carries [MCP tool annotations](https://modelcontextprotocol.io/specif
 | `truenas_app_update` | The upgrade snapshots the app's host-path datasets as well as its ix-volumes, but TrueNAS's app rollback restores only the ix-volumes. Undoing changes on host paths means rolling a dataset back by hand, which also reverts anything else stored in it (see [App updates and recovery](#app-updates-and-recovery)) |
 | `truenas_app_update_all` | The same as `truenas_app_update`, for every app with an update at once |
 | `truenas_snapshot_task_create` | Zettarepl retention selects snapshots by dataset and naming schema, not by the task that made them, so the new task can delete older snapshots whose names match its naming schema |
+| `truenas_snapshot_task_run` | A run does what a scheduled run does: after the snapshot, zettarepl runs retention, which can delete expired snapshots, and starts the linked replication tasks (enabled, `auto`, no schedule of their own). The dry run (the default) lists those replication tasks. Needs the `SNAPSHOT_TASK_WRITE` role |
 
 **Non-destructive writes** (`destructiveHint: false`): these are additive or recoverable. They are `truenas_dataset_create`, `truenas_snapshot_create`, `truenas_smb_create`, `truenas_nfs_create`, `truenas_alert_dismiss`, `truenas_app_start`, `truenas_app_stop`, and `truenas_app_restart`. Starting or restarting an app still interrupts it briefly, and `truenas_smb_create` with `guest_ok` widens access.
 
