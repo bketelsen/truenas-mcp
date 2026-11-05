@@ -39,8 +39,9 @@ const (
 // call the tool reads the task again and keeps that state as the baseline; it
 // refuses a task that is RUNNING then. After the call it polls
 // pool.snapshottask.query until a FINISHED or ERROR state with a datetime after
-// that baseline appears, then verifies the reported snapshot within the
-// deadline. A scheduled run that finishes after the call is reported too: its
+// that baseline appears, then verifies the reported snapshot. The deadline
+// bounds the run wait; the verification gets the time left, or at least
+// snapshotVerifyFloor, and the context bounds both. A scheduled run that finishes after the call is reported too: its
 // snapshot is newer than the call.
 //
 // pool.snapshottask.run is called exactly once and never again in any path: a
