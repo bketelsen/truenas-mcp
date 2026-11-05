@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -25,11 +26,18 @@ type fakeSnapshotRun struct {
 	jobs         []string // core.get_jobs answers, in order; the last one repeats
 	snapshots    map[string]string
 	poolSnapGone bool // pool.snapshot.query answers "method does not exist"
+	// preTasks, when set, replace the task for each query before the run, in
+	// order (the last one repeats); a nil entry means the task is gone.
+	preTasks []map[string]any
+	// onCall, when set, runs before each answer, outside the lock; it can
+	// cancel a context or block.
+	onCall func(method string)
 
 	methods   []string
 	runParams [][]any
 	ran       bool
 	statePoll int
+	preQuery  int
 	jobPoll   int
 	snapQuery []string // the method names of the snapshot queries
 }
@@ -42,16 +50,24 @@ func (f *fakeSnapshotRun) runCalls() int {
 
 func (f *fakeSnapshotRun) caller() *mockCaller {
 	return &mockCaller{CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+		if f.onCall != nil {
+			f.onCall(method)
+		}
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.methods = append(f.methods, method)
 		switch method {
 		case "pool.snapshottask.query":
-			if f.task == nil {
+			base := f.task
+			if !f.ran && len(f.preTasks) > 0 {
+				base = f.preTasks[min(f.preQuery, len(f.preTasks)-1)]
+				f.preQuery++
+			}
+			if base == nil {
 				return json.RawMessage(`[]`), nil
 			}
 			task := map[string]any{}
-			for k, v := range f.task {
+			for k, v := range base {
 				task[k] = v
 			}
 			if f.ran && len(f.states) > 0 {
@@ -513,5 +529,147 @@ func TestSnapshotTaskRun_RegistrationMode(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("truenas_snapshot_task_run not registered with writes enabled")
+	}
+}
+
+// withState returns a copy of the task of runTask with another state.
+func withState(state map[string]any) map[string]any {
+	task := runTask()
+	task["state"] = state
+	return task
+}
+
+func TestSnapshotTaskRun_CancelBeforeRun(t *testing.T) {
+	f := newRunFake()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	f.onCall = func(method string) {
+		if method == "replication.query" {
+			cancel()
+		}
+	}
+	fastSnapshotRun(t, time.Second)
+	_, err := runSnapshotTask(ctx, f.caller(), makeReq(t, map[string]any{"id": 7, "confirm": true}))
+	if err == nil || !strings.Contains(err.Error(), "cancelled before the run") || !strings.Contains(err.Error(), "nothing was run") {
+		t.Fatalf("error = %v", err)
+	}
+	if f.runCalls() != 0 {
+		t.Errorf("pool.snapshottask.run called %d times after a cancel, want 0", f.runCalls())
+	}
+}
+
+func TestSnapshotTaskRun_FreshBaselineIgnoresEarlierRun(t *testing.T) {
+	// A scheduled run finished between the preflight query and the call. The
+	// poll keeps showing that run; it is not the result of this call.
+	f := newRunFake()
+	scheduled := finished(1700040700000, "tank/data@auto-2023-11-15_09-31")
+	f.preTasks = []map[string]any{runTask(), withState(scheduled)}
+	f.states = []map[string]any{scheduled}
+	f.snapshots = map[string]string{
+		"tank/data@auto-2023-11-15_09-31": newSnapshotEntry("tank/data@auto-2023-11-15_09-31"),
+	}
+	fastSnapshotRun(t, 50*time.Millisecond)
+	result, err := callTool(t, f.caller(), false, "truenas_snapshot_task_run", map[string]any{"id": 7, "confirm": true})
+	msg := toolError(t, result, err)
+	if !strings.Contains(msg, "no finished run was seen") {
+		t.Errorf("error = %q", msg)
+	}
+	if f.runCalls() != 1 {
+		t.Errorf("pool.snapshottask.run called %d times, want 1", f.runCalls())
+	}
+}
+
+func TestSnapshotTaskRun_FreshBaselineNewerRun(t *testing.T) {
+	// With the fresh baseline, a run after it is still reported.
+	f := newRunFake()
+	scheduled := finished(1700040700000, "tank/data@auto-2023-11-15_09-31")
+	f.preTasks = []map[string]any{runTask(), withState(scheduled)}
+	f.states = []map[string]any{scheduled, finished(1700040800000, newSnapshot)}
+	fastSnapshotRun(t, time.Second)
+	result, err := callTool(t, f.caller(), false, "truenas_snapshot_task_run", map[string]any{"id": 7, "confirm": true})
+	if err != nil || result.IsError {
+		t.Fatalf("unexpected error: %v %v", err, result)
+	}
+	if out := resultJSON(t, resultText(t, result)); out["snapshot"] != newSnapshot || out["already_existed"] != false {
+		t.Errorf("result = %v", out)
+	}
+}
+
+func TestSnapshotTaskRun_RunningAtCall(t *testing.T) {
+	f := newRunFake()
+	f.preTasks = []map[string]any{runTask(), withState(running(1700040700000))}
+	fastSnapshotRun(t, time.Second)
+	result, err := callTool(t, f.caller(), false, "truenas_snapshot_task_run", map[string]any{"id": 7, "confirm": true})
+	msg := toolError(t, result, err)
+	if !strings.Contains(msg, "is running now") || !strings.Contains(msg, "nothing was run") {
+		t.Errorf("error = %q", msg)
+	}
+	if f.runCalls() != 0 {
+		t.Errorf("pool.snapshottask.run called %d times, want 0", f.runCalls())
+	}
+}
+
+func TestSnapshotTaskRun_GoneOrDisabledAtCall(t *testing.T) {
+	disabled := runTask()
+	disabled["enabled"] = false
+	for name, second := range map[string]map[string]any{"gone": nil, "disabled": disabled} {
+		f := newRunFake()
+		f.preTasks = []map[string]any{runTask(), second}
+		fastSnapshotRun(t, time.Second)
+		result, err := callTool(t, f.caller(), false, "truenas_snapshot_task_run", map[string]any{"id": 7, "confirm": true})
+		if msg := toolError(t, result, err); !strings.Contains(msg, "nothing was run") {
+			t.Errorf("%s: error = %q", name, msg)
+		}
+		if f.runCalls() != 0 {
+			t.Errorf("%s: pool.snapshottask.run called %d times, want 0", name, f.runCalls())
+		}
+	}
+}
+
+// blockSnapshotQuery makes every snapshot query block until the test ends.
+// before runs first, outside the fake's lock.
+func blockSnapshotQuery(t *testing.T, f *fakeSnapshotRun, before func()) {
+	t.Helper()
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	f.onCall = func(method string) {
+		if method == "pool.snapshot.query" || method == "zfs.snapshot.query" {
+			if before != nil {
+				before()
+			}
+			<-release
+		}
+	}
+}
+
+func TestSnapshotTaskRun_VerifyCancelled(t *testing.T) {
+	f := newRunFake()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	blockSnapshotQuery(t, f, cancel)
+	fastSnapshotRun(t, time.Second)
+	_, err := runSnapshotTask(ctx, f.caller(), makeReq(t, map[string]any{"id": 7, "confirm": true}))
+	if err == nil || !strings.Contains(err.Error(), "was not verified") || !strings.Contains(err.Error(), "truenas_snapshot_list") {
+		t.Fatalf("error = %v, want a not verified error", err)
+	}
+	if f.runCalls() != 1 {
+		t.Errorf("pool.snapshottask.run called %d times, want 1", f.runCalls())
+	}
+}
+
+func TestSnapshotTaskRun_VerifyPastDeadline(t *testing.T) {
+	f := newRunFake()
+	blockSnapshotQuery(t, f, nil)
+	fastSnapshotRun(t, 100*time.Millisecond)
+	oldFloor := snapshotVerifyFloor
+	snapshotVerifyFloor = 20 * time.Millisecond
+	t.Cleanup(func() { snapshotVerifyFloor = oldFloor })
+	result, err := callTool(t, f.caller(), false, "truenas_snapshot_task_run", map[string]any{"id": 7, "confirm": true})
+	msg := toolError(t, result, err)
+	if !strings.Contains(msg, "was not verified") || !strings.Contains(msg, "truenas_snapshot_list") {
+		t.Errorf("error = %q", msg)
+	}
+	if f.runCalls() != 1 {
+		t.Errorf("pool.snapshottask.run called %d times, want 1", f.runCalls())
 	}
 }

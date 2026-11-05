@@ -35,9 +35,13 @@ const (
 //   - middleware master: a job. Over the websocket it returns the job id, and the
 //     job fails with EEXIST when the snapshot name already exists.
 //
-// In both forms zettarepl records the run in the task's state. The tool keeps
-// the state from before the call and polls pool.snapshottask.query until a new
-// FINISHED or ERROR state appears, then verifies the reported snapshot.
+// In both forms zettarepl records the run in the task's state. Just before the
+// call the tool reads the task again and keeps that state as the baseline; it
+// refuses a task that is RUNNING then. After the call it polls
+// pool.snapshottask.query until a FINISHED or ERROR state with a datetime after
+// that baseline appears, then verifies the reported snapshot within the
+// deadline. A scheduled run that finishes after the call is reported too: its
+// snapshot is newer than the call.
 //
 // pool.snapshottask.run is called exactly once and never again in any path: a
 // transport error leaves the run state unknown (the no-replay rule in
@@ -66,157 +70,199 @@ func registerSnapshotTaskRunTool(s *mcp.Server, client truenas.Caller) {
 			OpenWorldHint:   new(false),
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		id, err := snapshotTaskRunID(req)
-		if err != nil {
-			return nil, err
-		}
-		confirm, err := strictBool(req, "confirm", false)
-		if err != nil {
-			return nil, err
-		}
-		wait, err := snapshotRunWaitFor(req)
-		if err != nil {
-			return nil, err
-		}
-
-		// 1. The task must exist.
-		task, err := querySnapshotTask(client, id)
-		if err != nil {
-			return nil, fmt.Errorf("%w; nothing was run", err)
-		}
-		if task == nil {
-			return nil, fmt.Errorf("no periodic snapshot task with id %d; nothing was run", id)
-		}
-		dataset, _ := task["dataset"].(string)
-
-		// 2. TrueNAS refuses a disabled task. The check also runs on a dry run,
-		// so the dry run gives the answer the real call would give.
-		if enabled, _ := task["enabled"].(bool); !enabled {
-			return nil, fmt.Errorf("task %d (dataset %s) is disabled; TrueNAS refuses to run a disabled task; nothing was run", id, dataset)
-		}
-
-		// 3. The replication tasks zettarepl starts after this task.
-		replications, err := replicationsStartedBy(client, id)
-		if err != nil {
-			return nil, fmt.Errorf("%w; nothing was run", err)
-		}
-
-		// 4. Preview only.
-		if !confirm {
-			return jsonValueResult(map[string]any{
-				"dry_run":            true,
-				"method":             "pool.snapshottask.run",
-				"params":             []any{id},
-				"task":               snapshotTaskSummary(task),
-				"starts_replication": replications,
-				"note": "A run makes the snapshot now, starts the listed replication tasks, and runs retention " +
-					"like a scheduled run. Call again with confirm true to run.",
-			})
-		}
-
-		// 5. One call, never replayed.
-		before, _ := task["state"].(map[string]any)
-		beforeDatetime := before["datetime"]
-		beforeSnapshot, _ := before["last_snapshot"].(string)
-		deadline := time.Now().Add(wait)
-
-		result, err := client.Call("pool.snapshottask.run", id)
-		if err != nil {
-			return nil, fmt.Errorf("pool.snapshottask.run failed: %w; the state of the run is not known: "+
-				"check truenas_snapshot_task_list before a new try, and do not run this tool again blindly", err)
-		}
-
-		// 6. Middleware master returns a job id; 25.10 and 27.0 return null.
-		if jobID, ok := snapshotRunJobID(result); ok {
-			outcome := waitForJob(ctx, client, jobID, time.Until(deadline))
-			switch outcome.State {
-			case "SUCCESS":
-			case "FAILED", "ABORTED":
-				if strings.Contains(outcome.Error, "already existed") {
-					return nil, fmt.Errorf("pool.snapshottask.run job %d ended %s: %s; the snapshot name already "+
-						"existed, so nothing new was made (the task probably ran on schedule in this minute)",
-						jobID, outcome.State, jobErrorText(outcome.Error))
-				}
-				return nil, fmt.Errorf("pool.snapshottask.run job %d ended %s: %s; the run failed",
-					jobID, outcome.State, jobErrorText(outcome.Error))
-			default:
-				reason := fmt.Sprintf("did not finish within %s", wait)
-				if outcome.Cancelled {
-					reason = "was cancelled while waiting"
-				}
-				return nil, fmt.Errorf("pool.snapshottask.run job %d %s and its last state was %s%s; the state of "+
-					"the run is unknown: check truenas_snapshot_task_list and do not run this tool again blindly",
-					jobID, reason, outcome.State, pollErrSuffix(outcome.PollErr))
-			}
-		}
-
-		// 7. Wait for zettarepl to record the run in the task state.
-		run := waitForSnapshotTaskState(ctx, client, id, beforeDatetime, deadline)
-		if run.Cancelled {
-			return nil, fmt.Errorf("cancelled while waiting for task %d to finish; the run was accepted and can "+
-				"still run: check truenas_snapshot_task_list and do not run this tool again blindly%s",
-				id, snapshotPollErrSuffix(run.PollErr))
-		}
-		if run.State == nil {
-			return nil, fmt.Errorf("the run of task %d was accepted, but no finished run was seen in %s; "+
-				"do not run this tool again: check truenas_snapshot_task_list%s",
-				id, wait, snapshotPollErrSuffix(run.PollErr))
-		}
-
-		if run.State["state"] == "ERROR" {
-			return nil, fmt.Errorf("the run of task %d (dataset %s) ended ERROR: %v; no verified snapshot exists from this run",
-				id, dataset, stateErrorText(run.State["error"]))
-		}
-
-		snapshot, _ := run.State["last_snapshot"].(string)
-		if snapshot == "" {
-			return nil, fmt.Errorf("the run of task %d finished, but the task state names no snapshot; "+
-				"no snapshot was verified: check truenas_snapshot_task_list", id)
-		}
-		alreadyExisted := snapshot == beforeSnapshot
-
-		// 8. Verify the snapshot.
-		entry, err := findSnapshot(client, snapshot)
-		if err != nil || entry == nil {
-			cause := "the snapshot query found no such snapshot"
-			if err != nil {
-				cause = fmt.Sprintf("the snapshot query failed: %v", err)
-			}
-			hint := ""
-			if allowEmpty, ok := task["allow_empty"].(bool); ok && !allowEmpty {
-				hint = "; the task has allow_empty false, so TrueNAS can skip or remove the snapshot of an unchanged dataset"
-			}
-			return nil, fmt.Errorf("the run of task %d finished and reported snapshot %s, but the snapshot was not verified: %s%s",
-				id, snapshot, cause, hint)
-		}
-
-		out := map[string]any{
-			"ran":                true,
-			"task_id":            id,
-			"dataset":            task["dataset"],
-			"recursive":          task["recursive"],
-			"snapshot":           snapshot,
-			"already_existed":    alreadyExisted,
-			"verified":           true,
-			"last_run":           lastRun(run.State, nil, false),
-			"starts_replication": replications,
-		}
-		if created, ok := snapshotCreation(entry); ok {
-			out["created"] = created
-		}
-		var notes []string
-		if alreadyExisted {
-			notes = append(notes, "The snapshot name exists already: the task probably ran on schedule in this "+
-				"minute. This run made no new snapshot.")
-		}
-		if recursive, _ := task["recursive"].(bool); recursive {
-			notes = append(notes, "The task is recursive: child datasets got the same snapshot name.")
-		}
-		if len(notes) > 0 {
-			out["note"] = strings.Join(notes, " ")
-		}
-		return jsonValueResult(out)
+		return runSnapshotTask(ctx, client, req)
 	})
+}
+
+// snapshotVerifyFloor is the shortest time the snapshot verification gets when
+// the run deadline is near or past, so a run seen just before the deadline can
+// still be verified. Tests shrink it.
+var snapshotVerifyFloor = 5 * time.Second
+
+// runSnapshotTask is the handler of truenas_snapshot_task_run. It is a separate
+// function so tests can call it with a context they cancel.
+func runSnapshotTask(ctx context.Context, client truenas.Caller, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := snapshotTaskRunID(req)
+	if err != nil {
+		return nil, err
+	}
+	confirm, err := strictBool(req, "confirm", false)
+	if err != nil {
+		return nil, err
+	}
+	wait, err := snapshotRunWaitFor(req)
+	if err != nil {
+		return nil, err
+	}
+
+	// 1. The task must exist.
+	task, err := querySnapshotTask(client, id)
+	if err != nil {
+		return nil, fmt.Errorf("%w; nothing was run", err)
+	}
+	if task == nil {
+		return nil, fmt.Errorf("no periodic snapshot task with id %d; nothing was run", id)
+	}
+	dataset, _ := task["dataset"].(string)
+
+	// 2. TrueNAS refuses a disabled task. The check also runs on a dry run,
+	// so the dry run gives the answer the real call would give.
+	if enabled, _ := task["enabled"].(bool); !enabled {
+		return nil, fmt.Errorf("task %d (dataset %s) is disabled; TrueNAS refuses to run a disabled task; nothing was run", id, dataset)
+	}
+
+	// 3. The replication tasks zettarepl starts after this task.
+	replications, err := replicationsStartedBy(client, id)
+	if err != nil {
+		return nil, fmt.Errorf("%w; nothing was run", err)
+	}
+
+	// 4. Preview only.
+	if !confirm {
+		return jsonValueResult(map[string]any{
+			"dry_run":            true,
+			"method":             "pool.snapshottask.run",
+			"params":             []any{id},
+			"task":               snapshotTaskSummary(task),
+			"starts_replication": replications,
+			"note": "A run makes the snapshot now, starts the listed replication tasks, and runs retention " +
+				"like a scheduled run. Call again with confirm true to run.",
+		})
+	}
+
+	// 5. Just before the write: stop on a cancel, and read the task again
+	// for a fresh baseline. A run that started or finished since step 1
+	// must not count as the result of this call.
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("cancelled before the run of task %d; nothing was run", id)
+	}
+	task, err = querySnapshotTask(client, id)
+	if err != nil {
+		return nil, fmt.Errorf("%w; nothing was run", err)
+	}
+	if task == nil {
+		return nil, fmt.Errorf("no periodic snapshot task with id %d; nothing was run", id)
+	}
+	if enabled, _ := task["enabled"].(bool); !enabled {
+		return nil, fmt.Errorf("task %d (dataset %s) is disabled; TrueNAS refuses to run a disabled task; nothing was run", id, dataset)
+	}
+	before, _ := task["state"].(map[string]any)
+	if before["state"] == "RUNNING" {
+		return nil, fmt.Errorf("task %d is running now (a scheduled or earlier run); nothing was run; try again after it finishes", id)
+	}
+	beforeDatetime := before["datetime"]
+	beforeSnapshot, _ := before["last_snapshot"].(string)
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("cancelled before the run of task %d; nothing was run", id)
+	}
+	deadline := time.Now().Add(wait)
+
+	// 6. One call, never replayed.
+	result, err := client.Call("pool.snapshottask.run", id)
+	if err != nil {
+		return nil, fmt.Errorf("pool.snapshottask.run failed: %w; the state of the run is not known: "+
+			"check truenas_snapshot_task_list before a new try, and do not run this tool again blindly", err)
+	}
+
+	// 7. Middleware master returns a job id; 25.10 and 27.0 return null.
+	if jobID, ok := snapshotRunJobID(result); ok {
+		outcome := waitForJob(ctx, client, jobID, time.Until(deadline))
+		switch outcome.State {
+		case "SUCCESS":
+		case "FAILED", "ABORTED":
+			if strings.Contains(outcome.Error, "already existed") {
+				return nil, fmt.Errorf("pool.snapshottask.run job %d ended %s: %s; the snapshot name already "+
+					"existed, so nothing new was made (the task probably ran on schedule in this minute)",
+					jobID, outcome.State, jobErrorText(outcome.Error))
+			}
+			return nil, fmt.Errorf("pool.snapshottask.run job %d ended %s: %s; the run failed",
+				jobID, outcome.State, jobErrorText(outcome.Error))
+		default:
+			reason := fmt.Sprintf("did not finish within %s", wait)
+			if outcome.Cancelled {
+				reason = "was cancelled while waiting"
+			}
+			return nil, fmt.Errorf("pool.snapshottask.run job %d %s and its last state was %s%s; the state of "+
+				"the run is unknown: check truenas_snapshot_task_list and do not run this tool again blindly",
+				jobID, reason, outcome.State, pollErrSuffix(outcome.PollErr))
+		}
+	}
+
+	// 8. Wait for zettarepl to record the run in the task state.
+	run := waitForSnapshotTaskState(ctx, client, id, beforeDatetime, deadline)
+	if run.Cancelled {
+		return nil, fmt.Errorf("cancelled while waiting for task %d to finish; the run was accepted and can "+
+			"still run: check truenas_snapshot_task_list and do not run this tool again blindly%s",
+			id, snapshotPollErrSuffix(run.PollErr))
+	}
+	if run.State == nil {
+		return nil, fmt.Errorf("the run of task %d was accepted, but no finished run was seen in %s; "+
+			"do not run this tool again: check truenas_snapshot_task_list%s",
+			id, wait, snapshotPollErrSuffix(run.PollErr))
+	}
+
+	if run.State["state"] == "ERROR" {
+		return nil, fmt.Errorf("the run of task %d (dataset %s) ended ERROR: %v; no verified snapshot exists from this run",
+			id, dataset, stateErrorText(run.State["error"]))
+	}
+
+	snapshot, _ := run.State["last_snapshot"].(string)
+	if snapshot == "" {
+		return nil, fmt.Errorf("the run of task %d finished, but the task state names no snapshot; "+
+			"no snapshot was verified: check truenas_snapshot_task_list", id)
+	}
+	alreadyExisted := snapshot == beforeSnapshot
+
+	// 9. Verify the snapshot, bounded by the deadline and the context.
+	verifyWait := max(time.Until(deadline), snapshotVerifyFloor)
+	entry, ok, err := findSnapshotBounded(ctx, client, snapshot, verifyWait)
+	if !ok {
+		return nil, fmt.Errorf("the run of task %d finished and reported snapshot %s, but the snapshot %s was not "+
+			"verified: the check was cancelled or took longer than %s; check truenas_snapshot_list", id, snapshot, snapshot, verifyWait)
+	}
+	if err != nil || entry == nil {
+		cause := "the snapshot query found no such snapshot"
+		if err != nil {
+			cause = fmt.Sprintf("the snapshot query failed: %v", err)
+		}
+		hint := ""
+		if allowEmpty, ok := task["allow_empty"].(bool); ok && !allowEmpty {
+			hint = "; the task has allow_empty false, so TrueNAS can skip or remove the snapshot of an unchanged dataset"
+		}
+		return nil, fmt.Errorf("the run of task %d finished and reported snapshot %s, but the snapshot was not verified: %s%s",
+			id, snapshot, cause, hint)
+	}
+
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("cancelled after the run of task %d; the snapshot %s was not verified; check truenas_snapshot_list", id, snapshot)
+	}
+
+	out := map[string]any{
+		"ran":                true,
+		"task_id":            id,
+		"dataset":            task["dataset"],
+		"recursive":          task["recursive"],
+		"snapshot":           snapshot,
+		"already_existed":    alreadyExisted,
+		"verified":           true,
+		"last_run":           lastRun(run.State, nil, false),
+		"starts_replication": replications,
+	}
+	if created, ok := snapshotCreation(entry); ok {
+		out["created"] = created
+	}
+	var notes []string
+	if alreadyExisted {
+		notes = append(notes, "The snapshot name exists already: the task probably ran on schedule in this "+
+			"minute. This run made no new snapshot.")
+	}
+	if recursive, _ := task["recursive"].(bool); recursive {
+		notes = append(notes, "The task is recursive: child datasets got the same snapshot name.")
+	}
+	if len(notes) > 0 {
+		out["note"] = strings.Join(notes, " ")
+	}
+	return jsonValueResult(out)
 }
 
 // snapshotTaskRunID reads the id argument: an integer of at least 1.
@@ -433,6 +479,32 @@ func findSnapshot(client truenas.Caller, name string) (map[string]any, error) {
 		}
 	}
 	return nil, nil
+}
+
+// findSnapshotBounded runs findSnapshot in its own goroutine with a 1-slot
+// channel, as the polls do, because truenas.Caller takes no context. ok is false
+// when the context ends or wait runs out first; the call then finishes in the
+// background and its result is dropped. It is a read only.
+func findSnapshotBounded(ctx context.Context, client truenas.Caller, name string, wait time.Duration) (map[string]any, bool, error) {
+	type found struct {
+		entry map[string]any
+		err   error
+	}
+	results := make(chan found, 1)
+	go func() {
+		entry, err := findSnapshot(client, name)
+		results <- found{entry: entry, err: err}
+	}()
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case r := <-results:
+		return r.entry, true, r.err
+	case <-ctx.Done():
+		return nil, false, nil
+	case <-timer.C:
+		return nil, false, nil
+	}
 }
 
 // stateErrorText gives the error of an ERROR state, or says it has none.
