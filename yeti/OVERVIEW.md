@@ -20,6 +20,7 @@ main.go                  Entry point — uses Charm fang CLI framework
     ├── tools_dataset.go  Dataset list/get/create/delete tools
     ├── tools_snapshot.go Snapshot list/get/create/delete tools
     ├── tools_data_protection.go  Periodic snapshot task and replication task list tools, plus the periodic snapshot task create tool (allow-listed summaries; no secrets)
+    ├── tools_snapshot_task_run.go  Periodic snapshot task run tool (dry run by default; pool.snapshottask.run once; state poll; snapshot verify)
     ├── tools_protection.go  Protection report: per-dataset snapshot task coverage, newest periodic snapshot age, replication, flags (read-only; size-capped)
     ├── tools_share.go    SMB and NFS share tools
     ├── tools_alert.go    Alert list/dismiss tools
@@ -28,6 +29,7 @@ main.go                  Entry point — uses Charm fang CLI framework
     ├── tools_app_configure.go  App configuration write tool (deep-merge over app.config, then app.update)
     ├── tools_app_compose.go  Custom (compose) app write tool (validate YAML, dry-run diff + hash guard, app.update once, wait for the job)
     ├── linediff.go       LCS-based unified line diff used by the compose tool (no external diff dependency)
+    ├── jobs.go           Shared job wait (waitForJob: core.get_jobs poll loop) for the compose and snapshot task run tools
     └── params.go         Typed MCP parameter accessors
 ```
 
@@ -90,7 +92,7 @@ Each tool is defined inline with `s.AddTool(&mcp.Tool{...}, handlerFunc)`. The h
 Every tool also sets `Annotations: &mcp.ToolAnnotations{...}` (go-sdk v1.4.0 field types: `ReadOnlyHint bool`, `DestructiveHint *bool`, `IdempotentHint bool`, `OpenWorldHint *bool`, `Title string`; the pointers use Go 1.26 `new(false)` / `new(true)`). Rules, enforced by `server/annotations_test.go`:
 - `Title` is always set, and `OpenWorldHint` is always `new(false)` — the only world is the one appliance.
 - Tools registered in read-only mode set `ReadOnlyHint: true`.
-- Write tools set `ReadOnlyHint: false` and an explicit `DestructiveHint` (the MCP default when omitted is true). `true` means the call can lose data or settings or is hard to undo (deletes, `truenas_app_configure`, `truenas_app_compose_update`, `truenas_app_delete`, `truenas_app_update`, `truenas_app_update_all`, `truenas_snapshot_task_create`); `false` means additive or recoverable.
+- Write tools set `ReadOnlyHint: false` and an explicit `DestructiveHint` (the MCP default when omitted is true). `true` means the call can lose data or settings or is hard to undo (deletes, `truenas_app_configure`, `truenas_app_compose_update`, `truenas_app_delete`, `truenas_app_update`, `truenas_app_update_all`, `truenas_snapshot_task_create`, `truenas_snapshot_task_run`); `false` means additive or recoverable.
 - `IdempotentHint: true` only when a repeat call with the same arguments has no further effect on the appliance.
 - Non-obvious classifications carry a trailing one-line comment explaining why (e.g. app updates stay destructive even though `upgradeApp` sends `snapshot_hostpaths: true`, because `app.rollback` restores only the ix-volumes snapshot and host-path snapshots need a manual ZFS rollback; `truenas_app_start` is not idempotent because `app.start` always runs `compose up --force-recreate`).
 
@@ -121,8 +123,12 @@ Why each part exists:
 - `current_sha256` is the hex SHA-256 of the canonical stored compose. A write must pass it as `expected_sha256`; a missing or different value is refused with the current hash in the message, so a caller cannot apply a compose it never previewed, and a compose that changed after the preview cannot be overwritten silently.
 - `unifiedDiff` (`server/linediff.go`) is a small LCS line diff: common prefix and suffix are copied, the middle comes from a dynamic-programming LCS table capped at 4M cells, and hunks carry 3 context lines with `--- current` / `+++ proposed` headers. There is no diff dependency.
 - `app.update` is called once and never replayed. A transport error leaves the job state unknown, and the middleware keeps no previous compose, so the error tells the caller to check `truenas_jobs_list` instead of running the tool again.
-- The job wait polls `core.get_jobs` every `jobPollInterval` (2 seconds; a package variable so tests use milliseconds) until `SUCCESS`, `FAILED`, `ABORTED`, the deadline or context cancellation. The context and the deadline are checked before each poll, and the wait between polls is the smaller of `jobPollInterval` and the time left, so no poll starts after the deadline. `truenas.Caller` takes no context, so a poll call cannot be stopped: each poll runs in its own goroutine and sends its result to a channel with room for 1, so a cancel or the deadline ends the wait at once and the abandoned poll finishes in the background with its result dropped. An abandoned poll is a read only, and `app.update` is never called again. A failed poll is a read and is retried; its error is kept for the final message. `composeJobWait` (a package variable) replaces `timeout_seconds` in tests, because the smallest allowed timeout is 30 seconds.
+- The job wait (`waitForJob` in `server/jobs.go`, shared with `truenas_snapshot_task_run`) polls `core.get_jobs` every `jobPollInterval` (2 seconds; a package variable so tests use milliseconds) until `SUCCESS`, `FAILED`, `ABORTED`, the deadline or context cancellation. The context and the deadline are checked before each poll, and the wait between polls is the smaller of `jobPollInterval` and the time left, so no poll starts after the deadline. `truenas.Caller` takes no context, so a poll call cannot be stopped: each poll runs in its own goroutine and sends its result to a channel with room for 1, so a cancel or the deadline ends the wait at once and the abandoned poll finishes in the background with its result dropped. An abandoned poll is a read only, and `app.update` is never called again. A failed poll is a read and is retried; its error is kept for the final message. `composeJobWait` (a package variable) replaces `timeout_seconds` in tests, because the smallest allowed timeout is 30 seconds.
 - The full previous compose is `current_compose` of the dry run and `previous_compose` of a successful write; TrueNAS keeps no copy. The `FAILED`/`ABORTED` error says to send that complete compose back with this tool to roll back. A unified diff is not a full copy, so it is never offered as the rollback source.
+
+### Running a Periodic Snapshot Task
+
+`truenas_snapshot_task_run` (`server/tools_snapshot_task_run.go`) runs 1 periodic snapshot task now with `pool.snapshottask.run` (role `SNAPSHOT_TASK_WRITE`). It is a dry run unless `confirm` is `true`, and the dry run applies the same checks (task exists, task enabled) and lists the replication tasks the run starts. The write is called once and never again. In TS-25.10 and TS-27.0 the method returns `null` and the snapshot is made later by zettarepl; in middleware master it is a job and returns the job id, which the tool waits for with `waitForJob`. Either way, the tool then polls `pool.snapshottask.query` until the task state shows a newer datetime with `FINISHED` or `ERROR`, and it verifies the reported `last_snapshot` with `callSnapshot`. A same `last_snapshot` with a newer datetime means the name already existed (`already_existed: true`). Details in `yeti/tools.md`.
 
 ### Read-Only Mode
 

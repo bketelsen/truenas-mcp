@@ -30,7 +30,7 @@ one up in `core.get_methods` (keys are method names; each value has `accepts`, `
 | `pool.dataset.query` | `truenas_dataset_list`, `truenas_dataset_get` | present | filters `pool =` / `id =` | OK (live) |
 | `pool.dataset.create` | `truenas_dataset_create` | present | `name`, `comments`, `compression` | **Gap 3** (fixed): `compression` is an upper-case enum |
 | `pool.dataset.delete` | `truenas_dataset_delete` | present | `id` string | OK (schema) |
-| `pool.snapshot.query` | `truenas_snapshot_list`, `truenas_snapshot_get` | present | filters, `options.extra.properties` | OK (live, PRs #41, #42) |
+| `pool.snapshot.query` | `truenas_snapshot_list`, `truenas_snapshot_get`, `truenas_snapshot_task_run` (verify) | present | filters, `options.extra.properties` | OK (live, PRs #41, #42) |
 | `pool.snapshot.create` | `truenas_snapshot_create` | present | `dataset`, `name` | OK (schema) |
 | `pool.snapshot.delete` | `truenas_snapshot_delete` | present | `id` string | OK (schema) |
 | `zfs.snapshot.query/create/delete` | legacy fallback in `callSnapshot` | **removed** | same as above | Handled by PR #41 (pre-25.10 fallback only) |
@@ -49,10 +49,11 @@ one up in `core.get_methods` (keys are method names; each value has `accepts`, `
 | `app.redeploy` | `truenas_app_restart` | present (job) | `app_name` | OK (schema) |
 | `app.update` | `truenas_app_configure` (with `{values}`), `truenas_app_compose_update` (with `{custom_compose_config}`) | present (job) | `app_name`, `{values}` or `{custom_compose_config}` | OK (schema) |
 | `app.upgrade` | `truenas_app_update`, `truenas_app_update_all` | present (job) | `app_version`, `values`, `snapshot_hostpaths` | OK (schema) |
-| `core.get_jobs` | `truenas_jobs_list`, `truenas_app_compose_update` (poll loop) | present | filters, `order_by`, `limit`; the poll uses the filter `id =` | OK (live) |
-| `pool.snapshottask.query` | `truenas_snapshot_task_list`, `truenas_snapshot_task_create` | present | none, or filter `dataset =` | OK (schema + middleware source, not called live) |
+| `core.get_jobs` | `truenas_jobs_list`, `truenas_app_compose_update` and `truenas_snapshot_task_run` (poll loop `waitForJob`) | present | filters, `order_by`, `limit`; the poll uses the filter `id =` | OK (live) |
+| `pool.snapshottask.query` | `truenas_snapshot_task_list`, `truenas_snapshot_task_create`, `truenas_snapshot_task_run` | present | none, or filter `dataset =`; the run tool uses filter `id =` (before the run and in its state poll) | OK (schema + middleware source, not called live) |
 | `pool.snapshottask.create` | `truenas_snapshot_task_create` | present | 1 object: `dataset`, `recursive`, `exclude`, `lifetime_value`, `lifetime_unit` (upper-case enum), `naming_schema`, `schedule` (minute, hour, dom, month, dow, begin, end), `allow_empty`, `enabled` | OK (schema + middleware source, not called live) |
-| `replication.query` | `truenas_replication_task_list` | present | none | OK (schema + middleware source, not called live) |
+| `pool.snapshottask.run` | `truenas_snapshot_task_run` | present (not a job in 25.10/27.0: returns null; a job in master: returns the job id) | `id` integer | OK (checked against middleware source TS-25.10.8, TS-27.0.0-RC.1 and master, not called live (it writes)); role `SNAPSHOT_TASK_WRITE` |
+| `replication.query` | `truenas_replication_task_list`, `truenas_snapshot_task_run` (linked replication tasks for the dry run and the result) | present | none | OK (schema + middleware source, not called live) |
 | `app.delete` | `truenas_app_delete` | present (job) | `app_name`, `{remove_images, remove_ix_volumes, force_remove_custom_app}` | OK (schema + middleware source, not called live) |
 | `pool.dataset.query` (options) | `truenas_protection_report` | present | filters `[]` or `pool =`; options `select` [`id`,`name`,`type`,`pool`,`usedbydataset`], `extra` {`flat`: true, `properties`: [`usedbydataset`], `retrieve_user_props`: false} | OK (live, read-only build, 2026-11-02) |
 | `docker.config` | `truenas_protection_report` (apps pool for the limits text; an error is ignored) | present | none | OK (live, read-only build, 2026-11-02) |

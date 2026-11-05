@@ -114,8 +114,9 @@ func registerDataProtectionReadTools(s *mcp.Server, client truenas.Caller) {
 	})
 }
 
-// registerDataProtectionWriteTools registers the write tool that creates a
-// periodic snapshot task.
+// registerDataProtectionWriteTools registers the write tools that create a
+// periodic snapshot task and run one now (truenas_snapshot_task_run, in
+// tools_snapshot_task_run.go).
 //
 // The client never replays a call after a transport error, and an AI client may
 // retry a call whose result it did not see. The tool therefore queries the
@@ -253,6 +254,8 @@ func registerDataProtectionWriteTools(s *mcp.Server, client truenas.Caller) {
 		}
 		return jsonValueResult(snapshotTaskSummary(created))
 	})
+
+	registerSnapshotTaskRunTool(s, client)
 }
 
 // defaultSnapshotNamingSchema is the naming schema the create tool sends when

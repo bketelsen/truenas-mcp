@@ -23,6 +23,7 @@ var writeToolNames = []string{
 	"truenas_snapshot_create",
 	"truenas_snapshot_delete",
 	"truenas_snapshot_task_create",
+	"truenas_snapshot_task_run",
 	"truenas_smb_create",
 	"truenas_smb_delete",
 	"truenas_nfs_create",

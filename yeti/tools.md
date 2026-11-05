@@ -2,7 +2,7 @@
 
 Complete catalog of MCP tools exposed by truenas-mcp. Tools marked with **[write]** are excluded by default and are registered only with `--enable-writes` or `TRUENAS_ENABLE_WRITES=true`.
 
-Every tool carries MCP annotations (`Title`, `ReadOnlyHint`, `DestructiveHint`, `IdempotentHint`, `OpenWorldHint: false`) defined next to its `mcp.Tool` literal; `wantToolHints` in `server/annotations_test.go` is the authoritative classification table. All non-**[write]** tools are `readOnlyHint: true`. Destructive writes (`destructiveHint: true`): `truenas_dataset_delete`, `truenas_snapshot_delete`, `truenas_smb_delete`, `truenas_nfs_delete`, `truenas_app_configure`, `truenas_app_compose_update`, `truenas_app_delete`, `truenas_app_update`, `truenas_app_update_all`, `truenas_snapshot_task_create`. Every other **[write]** tool is `destructiveHint: false`.
+Every tool carries MCP annotations (`Title`, `ReadOnlyHint`, `DestructiveHint`, `IdempotentHint`, `OpenWorldHint: false`) defined next to its `mcp.Tool` literal; `wantToolHints` in `server/annotations_test.go` is the authoritative classification table. All non-**[write]** tools are `readOnlyHint: true`. Destructive writes (`destructiveHint: true`): `truenas_dataset_delete`, `truenas_snapshot_delete`, `truenas_smb_delete`, `truenas_nfs_delete`, `truenas_app_configure`, `truenas_app_compose_update`, `truenas_app_delete`, `truenas_app_update`, `truenas_app_update_all`, `truenas_snapshot_task_create`, `truenas_snapshot_task_run`. Every other **[write]** tool is `destructiveHint: false`.
 
 ## System Tools (`tools_system.go`)
 
@@ -130,6 +130,30 @@ Create a periodic snapshot task: TrueNAS snapshots the dataset on the given cron
 - Returns: the created task, projected by `snapshotTaskSummary` (the field set of `truenas_snapshot_task_list`); with `dry_run`: `{ "dry_run": true, "method": "pool.snapshottask.create", "payload": {...} }`
 - Retention risk: zettarepl retention selects snapshots by dataset and naming schema, not by the task that made them. A new task can therefore delete older snapshots whose names match its naming schema, from a removed task or made by hand. So the tool is `destructiveHint: true`. It is not idempotent: the duplicate guard is a read-then-write check, so a repeat can add a task.
 - `lifetime_value` is limited to 1 to 10000; the bound keeps the value inside the middleware Integer field and inside an `int`, which the payload conversion needs. `begin` and `end` must be the canonical `HH:MM` form: `time.Parse("15:04", v)` must format back to `v`, so `1:30` is refused and `01:30` is accepted.
+
+### `truenas_snapshot_task_run` **[write]**
+Run 1 existing periodic snapshot task now (TrueNAS "Run Now"). Code: `server/tools_snapshot_task_run.go`, registered by `registerDataProtectionWriteTools`. Middleware role: `SNAPSHOT_TASK_WRITE` (it includes `SNAPSHOT_TASK_READ`; `replication.query` and the snapshot query need `READONLY_ADMIN` or the matching `*_READ` roles).
+- Parameters:
+  - `id` (number, required) — task id, an integer of at least 1; `0`, a negative value, `1.5` or a string is refused
+  - `confirm` (boolean, optional, default false; `strictBool`) — only `true` runs the task; anything else is a dry run
+  - `timeout_seconds` (number, optional, default 120, allowed 10 to 600) — the whole wait for the run (job wait plus state poll). `snapshotRunWait` (a package variable) replaces it in tests, after the range check
+- APIs, in order:
+  1. `pool.snapshottask.query` with `[["id", "=", id]]`. Empty: error `no periodic snapshot task with id N; nothing was run`.
+  2. A disabled task is refused, also on a dry run, because the middleware refuses it (`CallError "Task is not enabled"`).
+  3. `replication.query` (no parameters). `starts_replication` lists the tasks zettarepl starts after this task: `enabled` true, `auto` true, `schedule` null, and this id in `periodic_snapshot_tasks`. Allow-list output: `id`, `name`, `direction`, `transport`, `target_dataset`; credentials and keys never reach the result. An error here is a tool error and nothing was run.
+  4. Dry run returns `{ "dry_run": true, "method": "pool.snapshottask.run", "params": [id], "task": snapshotTaskSummary, "starts_replication": [...], "note" }`.
+  5. `pool.snapshottask.run` with `id`, exactly once. It is never called again in any path (no retry, no replay; the no-replay rule in `truenas/client.go`). An error says the state of the run is unknown and to check `truenas_snapshot_task_list` before a new try.
+  6. When the result is a JSON integer (a job id), `waitForJob` (`server/jobs.go`) polls `core.get_jobs`. `FAILED`/`ABORTED` is an error with the job text; the error says "nothing new was made" only when the text says "already existed". Timeout or cancel: the state is unknown, check `truenas_snapshot_task_list`. `SUCCESS`, `null` and any other result go on to the state poll.
+  7. `pool.snapshottask.query` `[["id", "=", id]]` every `jobPollInterval` until the deadline (`waitForSnapshotTaskState`, same goroutine-per-poll pattern as `waitForJob`). The run is seen when `state.datetime` differs from the datetime before the call (raw value compare with `reflect.DeepEqual`; a missing value before means the task never ran) AND `state.state` is `FINISHED` or `ERROR`. `RUNNING` and a failed poll keep the wait going; the last poll error goes into the final message.
+  8. Verify with `callSnapshot(client, "query", [["id", "=", snapshot]], snapshotQueryOptions())` (`pool.snapshot.query`, falling back to `zfs.snapshot.query` on "method does not exist").
+- 2 middleware forms of `pool.snapshottask.run`:
+  - TS-25.10.x and TS-27.0.0-RC.1: not a job. It checks the task, queues the run in zettarepl, and returns `null` at once. The snapshot is made later.
+  - middleware master (a future release): a `@job`. Over the websocket it returns the job id. The job waits for zettarepl and fails with `EEXIST` "Snapshot X@Y already existed. This probably happened because the task already ran on schedule." when 2 runs fall in the same minute.
+  - In both forms zettarepl writes the task state: `RUNNING` with a new datetime, then `last_snapshot` and `FINISHED` with a new datetime, or `ERROR` with `error`. In 25.10/27.0 an "already existed" run still sets `FINISHED` with a new datetime and the same `last_snapshot`.
+- Returns on success (allow-list): `{ "ran": true, "task_id", "dataset", "recursive", "snapshot": "dataset@name", "already_existed": bool, "verified": true, "created": <unix seconds, omitted when unknown>, "last_run": lastRun(state), "starts_replication": [...], "note"? }`. `already_existed` is true when the finished state names the same `last_snapshot` as before: the name existed (the task probably ran on schedule in this minute) and no new snapshot was made. `note` says so, and for a recursive task it says child datasets got the same snapshot name.
+- Errors after the call: state `ERROR` (with the state error text; no verified snapshot exists from this run); `FINISHED` with no `last_snapshot`; the snapshot not found or the query failed (names the snapshot, "not verified"; with `allow_empty` false the message says TrueNAS can skip or remove the snapshot of an unchanged dataset); deadline with no finished run ("the run was accepted ... do not run this tool again: check truenas_snapshot_task_list"); cancel.
+- Annotations: `destructiveHint: true` — a run does what a scheduled run does, so retention can delete expired snapshots and linked replication tasks start. `idempotentHint: false` — each run makes a new snapshot or fails on the name of this minute.
+- Tests: `server/tools_snapshot_task_run_test.go` (fake middleware with a state sequence; asserts `pool.snapshottask.run` is called exactly once, or never on a dry run or a refused argument).
 
 ### `truenas_replication_task_list`
 List replication tasks.

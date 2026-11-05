@@ -57,6 +57,10 @@ var wantToolHints = map[string]toolHints{
 	// the task that made them, so a new task can delete older snapshots that
 	// match its naming schema.
 	"truenas_snapshot_task_create": {destructive: true},
+	// A run does what a scheduled run does: retention can delete expired
+	// snapshots, and linked replication tasks start. Each run makes a new
+	// snapshot or fails on the name of this minute, so it is not idempotent.
+	"truenas_snapshot_task_run": {destructive: true},
 
 	// Non-destructive writes: additive or recoverable.
 	"truenas_dataset_create":  {idempotent: true},
