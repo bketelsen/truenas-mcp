@@ -31,9 +31,16 @@ image update. It is read-only.
 ## Step 2: upgrade
 
 `truenas_app_update` upgrades 1 app to the latest version and returns the job
-ID. `truenas_app_update_all` upgrades every app with an update and returns 1
-job ID for each. Follow the jobs with `truenas_jobs_list` until each one is
-`SUCCESS` or `FAILED`.
+ID. `truenas_app_update_all` upgrades every app that has an app update and
+returns 1 job ID for each. Follow the jobs with `truenas_jobs_list` until each
+one is `SUCCESS` or `FAILED`.
+
+!!! note "Image updates are not app updates"
+
+    Both tools act only on apps whose `upgrade_available` is true.
+    `truenas_app_update` refuses any other app, and `truenas_app_update_all`
+    skips it. An app that the report lists with only a container image update
+    (`image_updates_available`) stays unchanged.
 
 ## Step 3: undo a bad upgrade
 

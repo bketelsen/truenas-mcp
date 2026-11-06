@@ -27,7 +27,7 @@ has these assets:
 
 The packages also install shell completions for bash, zsh and fish, and the
 `truenas-mcp(1)` man page. The `dev` pre-release tracks the latest commit on
-`main`.
+`main`; it has no provenance attestation (see below).
 
 === "Archive"
 
@@ -50,12 +50,17 @@ The packages also install shell completions for bash, zsh and fish, and the
 
 ### Verify a download
 
-Every release asset is signed with GitHub build provenance. Verify an asset
-with the GitHub CLI before you install it:
+The release workflow, which runs on a tag push, signs `checksums.txt` and
+every archive and package with GitHub build provenance. Verify an asset of a
+tagged release with the GitHub CLI before you install it:
 
 ```sh
 gh attestation verify truenas-mcp_*_linux_amd64.tar.gz --repo bketelsen/truenas-mcp
 ```
+
+The `dev` pre-release comes from a separate nightly workflow that creates no
+attestation, so `gh attestation verify` fails for its assets. Use a tagged
+release when you need a verified binary.
 
 ## Install from source
 

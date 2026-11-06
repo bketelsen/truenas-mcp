@@ -124,6 +124,15 @@ affected user pages in `site/content/` (the docs site, `make site`), plus
 [docs/specs/api-audit.md](docs/specs/api-audit.md) when a middleware method or
 the payload it receives changes.
 
+**Site pages state checked facts only.** Each claim on a `site/content/`
+page comes from the code, a workflow or a doc at the PR head, with its scope
+kept: a claim about release assets names the workflow that makes them
+(`release.yml` attests tagged releases; the `dev` pre-release from
+`snapshot.yml` has no attestation), a claim about a tool names the field it
+acts on (`truenas_app_update*` act on `upgrade_available`, not on
+`image_updates_available`), and an audit date covers only the methods the
+audit checked on that date.
+
 A decision local to this repository gets an ADR in `docs/adr/`. A decision that
 binds more than this repository goes to
 [frostyard/core](https://github.com/frostyard/core/tree/main/docs/adr) and gets

@@ -260,7 +260,7 @@ Parameters: `name` *required*.
 
 **Write tool.** Registered only with `--enable-writes`.
 
-Upgrade an app to the latest version. Returns a job ID.
+Upgrade an app to the latest version. Returns a job ID. Refuses an app whose `upgrade_available` is false, also when it has a container image update.
 
 Parameters: `name` *required*.
 
@@ -268,7 +268,7 @@ Parameters: `name` *required*.
 
 **Write tool.** Registered only with `--enable-writes`.
 
-Upgrade every app with an update. Returns 1 job ID for each app. No parameters.
+Upgrade every app whose `upgrade_available` is true. Returns 1 job ID for each app. An app with only a container image update is not upgraded. No parameters.
 
 ### `truenas_app_configure`
 
@@ -309,7 +309,7 @@ settings, or are hard to undo.
 | `truenas_app_compose_update` | Replaces the stored compose whole. TrueNAS keeps no earlier copy; the dry run's `current_compose` and the write's `previous_compose` hold it. Needs the `APPS_WRITE` role. |
 | `truenas_app_delete` | Deletes the app, its containers, docker volumes and images; with `remove_ix_volumes` also its ix-volumes and their snapshots. Host paths stay. |
 | `truenas_app_update` | TrueNAS snapshots the host-path datasets, but an app rollback restores only the ix-volumes. See [app updates and recovery](../guides/app-updates.md). |
-| `truenas_app_update_all` | The same as `truenas_app_update`, for every app with an update at once. |
+| `truenas_app_update_all` | The same as `truenas_app_update`, for every app with an app update at once. |
 | `truenas_snapshot_task_create` | Retention selects snapshots by dataset and naming schema, not by the task that made them, so the new task can delete older snapshots whose names match. |
 | `truenas_snapshot_task_run` | A run does what a scheduled run does: retention can delete expired snapshots, and linked replication tasks start. The dry run lists those replication tasks. Needs the `SNAPSHOT_TASK_WRITE` role. |
 

@@ -74,7 +74,9 @@ need them.
 
 ## Supported TrueNAS releases
 
-truenas-mcp supports TrueNAS SCALE Goldeye (25.10) and later. Every middleware
-method that the tools call was checked against TrueNAS 27.0 on 2026-10-22. The
+truenas-mcp supports TrueNAS SCALE Goldeye (25.10) and later. The
 [API audit](https://github.com/bketelsen/truenas-mcp/blob/main/docs/specs/api-audit.md)
-lists the methods and the fallbacks for older releases.
+checked the middleware methods of the tools against a live TrueNAS
+27.0.0-RC.1 on 2026-10-22. Methods that later tools added carry their own
+check and its date in the audit, live or against the middleware source. The
+audit also lists the fallbacks for older releases.
