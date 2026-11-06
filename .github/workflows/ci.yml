@@ -58,11 +58,23 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The corrections check compares .memory/corrections.jsonl with the PR
+          # base, so the base commit must be in the clone.
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+
+      # The template gate (ADR-0003) needs Node, pinned in mise.toml/mise.lock
+      # like golangci-lint in the lint job.
+      - name: Install pinned Node
+        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          install: true
+          install_args: node
+          cache: true
 
       - name: Verify go.mod is tidy
         run: go mod tidy -diff
@@ -75,6 +87,18 @@ jobs:
 
       - name: Test the gofmt check
         run: ./scripts/check-gofmt_test.sh
+
+      - name: Check the agent surfaces, docs index, risk paths and vendored copies
+        run: node scripts/check-template.mjs
+
+      - name: Test the template gate
+        run: node --test test/*.test.mjs
+
+      - name: Check corrections are append-only against the PR base
+        run: |
+          if [ -n "$BASE" ]; then node scripts/check-corrections.mjs --base "$BASE"; fi
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || '' }}
 
   test:
     name: Tests

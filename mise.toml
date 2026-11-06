@@ -7,3 +7,6 @@ lockfile = true
 
 [tools]
 golangci-lint = "2.13.1"
+# The template gate (make verify) runs scripts/check-template.mjs and the Node
+# test file, so the Node release is pinned here too. Node 24 LTS.
+node = "24.22.2"

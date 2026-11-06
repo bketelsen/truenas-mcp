@@ -1,4 +1,4 @@
-.PHONY: all build install run clean fmt vet lint lint-version-check test test-cover tidy check verify-static verify ci test-scripts completions manpages release-check snapshot bump help
+.PHONY: all build install run clean fmt vet lint lint-version-check test test-cover tidy check verify-static verify-template verify ci test-scripts completions manpages release-check snapshot bump help
 
 # Build variables
 BINARY     := truenas-mcp
@@ -24,6 +24,10 @@ GOLANGCI_LINT_VERSION := $(strip $(shell sed -n 's/^golangci-lint = "\(.*\)"/\1/
 # toolchain.
 GO_VERSION := $(strip $(shell sed -n 's/^go \(.*\)/\1/p' go.mod))
 GOFILES    := $(shell find . -type f -name '*.go' -not -path "./vendor/*")
+# The major version of the Node on PATH (mise.toml pins it), checked by
+# make verify-template. ADR-0003 keeps the template gate free of any package
+# install, so the scripts run directly.
+NODE_MAJOR := $(shell node -p "process.versions.node.split('.')[0]" 2>/dev/null)
 
 all: fmt vet build
 
@@ -92,8 +96,8 @@ tidy:
 	$(GO) mod tidy
 	$(GO) mod verify
 
-## check: Run fmt, lint, and test
-check: fmt lint test
+## check: Developer gate: fmt, then the verify gate's static checks (lint and template included), then race tests
+check: fmt verify-static test
 
 ## verify-static: The non-mutating static checks shared by verify and ci (tidy diff, vet, gofmt -l, exact-pin lint)
 verify-static:
@@ -108,6 +112,15 @@ verify-static:
 	@echo "==> lint (golangci-lint $(GOLANGCI_LINT_VERSION))"
 	$(MAKE) lint-version-check
 	golangci-lint run
+	@echo "==> verify: template, docs index, risk paths, corrections, vendored copies"
+	$(MAKE) verify-template
+
+## verify-template: Check the agent surfaces, docs index, risk paths, corrections and vendored copies (needs Node.js 22 or later)
+verify-template:
+	@if ! command -v node >/dev/null 2>&1; then echo "FAIL: verify-template requires Node.js 22 or later (run: mise install)"; exit 1; fi
+	@if [ "$(NODE_MAJOR)" = "" ] || [ "$(NODE_MAJOR)" -lt 22 ]; then echo "FAIL: verify-template requires Node.js 22 or later (found: $$(node --version 2>/dev/null || echo missing)); run: mise install"; exit 1; fi
+	node scripts/check-template.mjs
+	node --test test/*.test.mjs
 
 ## verify: Credential-free, non-mutating gate for read-only reviewers (verify-static plus tests)
 verify: verify-static
@@ -120,6 +133,7 @@ test-scripts:
 
 ## ci: Run the credential-free CI gate (verify-static, then race tests and cross-build)
 ci: verify-static
+	@if [ -n "$(BASE)" ]; then node scripts/check-corrections.mjs --base "$(BASE)"; fi
 	@echo "==> race detector"
 	$(GO) test -race -count=1 ./...
 	@echo "==> cross-architecture build"
