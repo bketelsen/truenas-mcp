@@ -1,0 +1,104 @@
+# truenas-mcp Glossary
+
+Domain terms as they are used in this repository's code, tool descriptions and
+docs. Use the preferred term; the avoided words are the ones that make a
+sentence ambiguous to a later reader.
+
+Context: [overview.md](overview.md). Contracts:
+[specs/tools.md](../specs/tools.md).
+
+An MCP server that exposes TrueNAS SCALE management capabilities to AI assistants. It bridges the MCP protocol (spoken to AI clients over stdio) and the TrueNAS WebSocket JSON-RPC API (spoken to a NAS appliance).
+
+## Language
+
+### Infrastructure
+
+**Server**:
+The MCP server process — the binary that speaks MCP to AI clients. Not the NAS hardware.
+_Avoid_: host, daemon
+
+**Appliance**:
+The TrueNAS SCALE hardware or VM being managed. Identified by hostname or IP.
+_Avoid_: server, host, NAS, box
+
+**Tool**:
+An MCP-protocol callable exposed by the server. All tool names are prefixed `truenas_`. Tools are either read-only or mutating; mutating tools are only registered when the server is started with `--enable-writes`.
+_Avoid_: command, action, endpoint
+
+**Report**:
+A server-side aggregation tool that synthesizes data from multiple appliance queries into a single response. Unlike raw query tools, the server — not the appliance — does the assembly.
+_Avoid_: summary, dashboard
+
+### Storage
+
+**Pool**:
+A ZFS storage pool on the appliance — a collection of disks presenting a unified volume. TrueNAS term, rooted in ZFS.
+_Avoid_: volume, disk group
+
+**Dataset**:
+A ZFS filesystem or volume created within a Pool. Identified by its full path (e.g. `tank/media/movies`), which encodes the pool hierarchy.
+_Avoid_: share, folder, directory
+
+**Snapshot**:
+A point-in-time, read-only copy of a Dataset. Identified by dataset path and snapshot name.
+_Avoid_: backup, clone
+
+### Sharing
+
+**Share**:
+The umbrella concept for any network-exposed filesystem path on the appliance. Has two concrete subtypes: SMB Share and NFS Export.
+
+**SMB Share**:
+A Dataset mountpoint exposed over the SMB protocol. Has a name, path, and optional guest access flag.
+_Avoid_: Windows share, CIFS share
+
+**NFS Export**:
+A Dataset mountpoint exposed over the NFS protocol. Identified by path and configured network access rules.
+_Avoid_: NFS share, NFS mount
+
+### Apps
+
+**App**:
+A containerized workload installed and running on the appliance. Scoped to installed apps only — catalog entries that are not installed are out of scope.
+_Avoid_: container, service, pod
+
+### Operations
+
+**Alert**:
+A TrueNAS system notification with a level (INFO, WARNING, CRITICAL) and a dismissed state. Covers all notifications regardless of dismissed state. "Active alert" is informal shorthand for an undismissed one.
+_Avoid_: warning, notification, event
+
+**Job**:
+A TrueNAS-tracked asynchronous operation with a numeric ID and a lifecycle state (WAITING, RUNNING, SUCCESS, FAILED, ABORTED). Most write tools return a Job ID at once and leave the status to the AI client, which polls `truenas_jobs_list`. 2 tools wait instead and report the outcome: `truenas_app_compose_update` polls `core.get_jobs` with `waitForJob` (`server/jobs.go`), and `truenas_snapshot_task_run` waits for the task state and verifies the snapshot.
+_Avoid_: task, operation, process
+
+## Example dialogue
+
+> **Dev:** I want to update all apps that have pending updates.
+>
+> **Domain expert:** Call `truenas_app_update_all`. It returns a list of Job IDs — one per App being updated. Then poll recent jobs with `truenas_jobs_list` and match those IDs client-side until each Job reaches SUCCESS or FAILED.
+>
+> **Dev:** What if I only want to update one App?
+>
+> **Domain expert:** Use `truenas_app_update` with the App name. Same pattern — you get back a single Job ID and poll from there.
+>
+> **Dev:** Can I check which Apps have updates before running it?
+>
+> **Domain expert:** Yes — `truenas_apps_update_report` is a Report that lists Apps with available updates. Read-only, no side effects, no Job IDs returned.
+>
+> **Dev:** And if an update breaks the App's data?
+>
+> **Domain expert:** Before upgrading, TrueNAS takes a Snapshot of each Dataset holding the App's host paths, named `ix-app-upgrade-<app>-<previous version>`, as well as of its ix-volumes. Rolling the App back in TrueNAS restores only the ix-volumes. The host-path Snapshots have to be rolled back by hand, which reverts the whole Dataset. Custom Apps get no Snapshots.
+
+> **User:** Can I change how an App is configured, like its port or memory limit?
+>
+> **Domain expert:** Yes — `truenas_app_configure` takes the App name and a partial `values` object in the same shape `truenas_app_config` returns, deep-merges it into the current configuration, and applies it. It returns a Job ID; poll `truenas_jobs_list` until SUCCESS. Applying a change redeploys the App's containers, so expect a brief interruption. Use `dry_run: true` first to see the exact merged configuration and which paths would change. Custom (compose) Apps are not supported by this tool.
+
+## References
+
+- Rationale: [ADR-0004 — Read-only by default](../adr/0004-read-only-by-default.md)
+  (mutating tools and the opt-in), [ADR-0006 — Use the official TrueNAS WebSocket
+  client](../adr/0006-use-the-official-truenas-websocket-client.md) (Appliance,
+  API key)
+- Context: [overview.md](overview.md)
+- Contracts: [specs/tools.md](../specs/tools.md)

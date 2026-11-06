@@ -157,7 +157,7 @@ Tools marked with `*` are excluded by default and are registered only with `--en
 | `truenas_app_delete` | Delete an app (needs `confirm` = app name; `dry_run` shows the plan; returns a job ID) `*` |
 | `truenas_jobs_list` | Recent TrueNAS jobs, optionally filtered by state or method |
 
-Every middleware method these tools call was audited against TrueNAS 27.0 on 2026-10-22. See [yeti/api-audit.md](yeti/api-audit.md) for the method table and for the fallbacks that keep older releases working.
+Every middleware method these tools call was audited against TrueNAS 27.0 on 2026-10-22. See [docs/specs/api-audit.md](docs/specs/api-audit.md) for the method table and for the fallbacks that keep older releases working.
 
 ## Tool Annotations
 

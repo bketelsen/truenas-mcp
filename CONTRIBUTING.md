@@ -4,6 +4,10 @@ Thanks for helping improve `truenas-mcp`. This project exposes TrueNAS SCALE man
 
 ## Before You Start
 
+Coding agents read [`AGENTS.md`](AGENTS.md) first: it is the canonical
+instruction file, and `CLAUDE.md`, `GEMINI.md`, `.cursorrules` and
+`.github/copilot-instructions.md` are symlinks to it.
+
 - Check existing issues and pull requests to avoid duplicate work.
 - For bugs, include your TrueNAS SCALE version, `truenas-mcp` commit/version, OS, and a minimal reproduction.
 - Do not include API keys, hostnames you consider private, full NAS inventory, or other secrets in public issues.
@@ -13,7 +17,7 @@ Thanks for helping improve `truenas-mcp`. This project exposes TrueNAS SCALE man
 Requirements:
 
 - Go 1.26+ (the version in `go.mod`)
-- [mise](https://mise.jdx.dev) to install the pinned `golangci-lint` from `mise.toml`
+- [mise](https://mise.jdx.dev) to install the pinned `golangci-lint` and Node.js 22+ from `mise.toml`
 - [svu](https://github.com/caarlos0/svu) and [GoReleaser Pro](https://goreleaser.com/pro) only if you cut releases
 
 Install the pinned tools:
@@ -37,10 +41,17 @@ make test
 Run the recommended local gates before a PR:
 
 ```bash
-make verify   # tidy diff, vet, gofmt, pinned golangci-lint, tests
+make verify   # tidy diff, vet, gofmt, pinned golangci-lint, tests, template checks
 ```
 
-`make ci` runs the same gate plus the race detector and cross-builds. `make help` lists every target.
+`make verify` also runs the template gate (`scripts/check-template.mjs` and its
+Node test file): it checks the canonical `AGENTS.md` surfaces and symlinks, the
+`docs/README.md` index, `.github/risk-paths.json`, `.memory/corrections.jsonl`
+and the hash pins of the 2 files copied from frostyard/core. It needs Node.js 22
+or later; `mise install` provides the pinned release.
+
+`make ci` runs the same gate plus the race detector, the cross-builds and, with
+`BASE` set, the corrections append-only check. `make help` lists every target.
 
 `make lint` refuses to run unless the installed `golangci-lint` matches the pin in `mise.toml`, so local results match CI. Bump the pin in `mise.toml` in its own commit and run `mise install` to refresh `mise.lock`.
 

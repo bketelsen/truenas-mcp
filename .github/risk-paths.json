@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "paths": [
+    {
+      "glob": ".github/risk-paths.json",
+      "why": "governance: the high-risk path list"
+    },
+    {
+      "glob": ".github/workflows/**",
+      "why": "governance: CI, the risk-paths caller and token permissions"
+    },
+    {
+      "glob": "Makefile",
+      "why": "governance: the verify gate"
+    },
+    {
+      "glob": "scripts/check-template.mjs",
+      "why": "governance: the template verification gate"
+    },
+    {
+      "glob": "scripts/check-corrections.mjs",
+      "why": "governance: the corrections validation gate"
+    },
+    {
+      "glob": "scripts/lib/**",
+      "why": "governance: the vendored risk-path validator and matcher"
+    },
+    {
+      "glob": ".goreleaser.yaml",
+      "why": "publication: the GoReleaser Pro config that builds, packages and publishes every release and the dev nightly"
+    },
+    {
+      "glob": "mise.toml",
+      "why": "update verification: the tool pins (golangci-lint, node) that mise installs locally and CI installs from"
+    },
+    {
+      "glob": "mise.lock",
+      "why": "update verification: the checksums behind the tool pins CI installs; a lock edit changes what the gates run"
+    },
+    {
+      "glob": "truenas/client.go",
+      "why": "auth: the API key login and TLS setting, and the no-replay rule that stops a lost write response from being sent twice"
+    },
+    {
+      "glob": "server/server.go",
+      "why": "destructive operations: the read-only gate that registers the 19 write tools only when writes are enabled"
+    },
+    {
+      "glob": "cmd/serve.go",
+      "why": "auth: the API key, --tls-insecure and --enable-writes flags and their environment variables"
+    }
+  ]
+}
