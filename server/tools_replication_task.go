@@ -249,6 +249,9 @@ func parseReplicationCreatePlan(req *mcp.CallToolRequest) (*replicationCreatePla
 		if err := checkDatasetPath(src); err != nil {
 			return nil, fmt.Errorf("parameter %q: %w", "source_datasets", err)
 		}
+		if err := refuseHiddenDataset("source_datasets", src, "the source dataset exists"); err != nil {
+			return nil, err
+		}
 		if seen[src] {
 			return nil, fmt.Errorf("parameter %q lists %q more than once", "source_datasets", src)
 		}
@@ -267,6 +270,9 @@ func parseReplicationCreatePlan(req *mcp.CallToolRequest) (*replicationCreatePla
 	}
 	if !strings.Contains(target, "/") {
 		return nil, fmt.Errorf("parameter %q must name a dataset below a pool, not the pool root %q", "target_dataset", target)
+	}
+	if err := refuseHiddenDataset("target_dataset", target, "the target dataset is new"); err != nil {
+		return nil, err
 	}
 
 	snapshotIDs, err := replicationSnapshotTaskIDs(req)
@@ -311,6 +317,9 @@ func parseReplicationCreatePlan(req *mcp.CallToolRequest) (*replicationCreatePla
 	for _, entry := range exclude {
 		if err := checkDatasetPath(entry); err != nil {
 			return nil, fmt.Errorf("parameter %q: %w", "exclude", err)
+		}
+		if err := refuseHiddenDataset("exclude", entry, "the excluded dataset exists"); err != nil {
+			return nil, err
 		}
 		if !belowAnySource(entry, sources) {
 			return nil, fmt.Errorf("parameter %q entry %q must be below 1 of the source datasets", "exclude", entry)
@@ -534,6 +543,36 @@ func checkDatasetPath(path string) error {
 	return nil
 }
 
+// hiddenDatasetPath reports whether pool.dataset.query hides the path. The
+// middleware drops internal datasets from that query (its
+// internal_datasets_filters): a dataset of the boot pool (boot-pool or
+// freenas-boot), 1 whose id contains "/.system/", 1 whose id contains
+// "/ix-applications/", and 1 whose id contains "/ix-apps". The path gets a
+// trailing "/" first, so a hidden dataset also matches when it is the last name
+// in the path ("slow/.system", "slow/ix-applications").
+func hiddenDatasetPath(path string) bool {
+	if pool, _, _ := strings.Cut(path, "/"); pool == "boot-pool" || pool == "freenas-boot" {
+		return true
+	}
+	padded := path + "/"
+	for _, marker := range []string{"/.system/", "/ix-applications/", "/ix-apps"} {
+		if strings.Contains(padded, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// refuseHiddenDataset refuses a path that the existence query cannot show, so
+// the tool cannot prove that a dataset is new or that a source exists. It runs
+// with the arguments, before any middleware call.
+func refuseHiddenDataset(field, path, claim string) error {
+	if !hiddenDatasetPath(path) {
+		return nil
+	}
+	return fmt.Errorf("parameter %q: %q is an internal dataset path, which the pool.dataset.query this tool uses does not return (it hides the boot pool, .system, ix-applications and ix-apps), so the tool cannot prove that %s; nothing was created", field, path, claim)
+}
+
 // belowAnySource reports whether path is a strict child of 1 of the sources.
 func belowAnySource(path string, sources []string) bool {
 	for _, src := range sources {
@@ -721,12 +760,14 @@ func replicationBoundTaskSummaries(plan *replicationCreatePlan, snapshotTasks []
 }
 
 // replicationCreatePlanHash hashes every input of replication.create, so a write
-// can prove that it creates the plan the caller reviewed. json.Marshal sorts map
-// keys, so the text of a given plan is stable.
+// can prove that it creates the plan the caller reviewed. Every configuration
+// field the dry run shows is covered, and so is every field of the tasks and the
+// datasets the checks read. json.Marshal sorts map keys, so the text of a given
+// plan is stable.
 func replicationCreatePlanHash(payload map[string]any, snapshotTasks, replicationTasks []map[string]any, found map[string]bool) (string, error) {
 	snapshotPlan := make([]map[string]any, 0, len(snapshotTasks))
 	for _, task := range snapshotTasks {
-		// state is left out: a run of the task must not change the hash.
+		// Only state is left out: a run of the task must not change the hash.
 		snapshotPlan = append(snapshotPlan, map[string]any{
 			"id":             task["id"],
 			"dataset":        task["dataset"],
@@ -736,6 +777,8 @@ func replicationCreatePlanHash(payload map[string]any, snapshotTasks, replicatio
 			"naming_schema":  task["naming_schema"],
 			"lifetime_value": task["lifetime_value"],
 			"lifetime_unit":  task["lifetime_unit"],
+			"schedule":       task["schedule"],
+			"allow_empty":    task["allow_empty"],
 		})
 	}
 	replicationPlan := make([]map[string]any, 0, len(replicationTasks))

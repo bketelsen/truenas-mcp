@@ -30,6 +30,10 @@ func repCreateSnapshotTask(id float64, dataset string, recursive bool, exclude [
 		"naming_schema":  "auto-%Y-%m-%d_%H-%M",
 		"lifetime_value": float64(2),
 		"lifetime_unit":  "WEEK",
+		"allow_empty":    true,
+		"schedule": map[string]any{
+			"minute": "0", "hour": "*/4", "dom": "*", "month": "*", "dow": "*", "begin": "00:00", "end": "23:59",
+		},
 		"state": map[string]any{
 			"state":    "FINISHED",
 			"datetime": map[string]any{"$date": float64(1761220800000)},
@@ -885,6 +889,138 @@ func TestReplicationTaskCreate_SnapshotRunDoesNotChangeTheHash(t *testing.T) {
 	}
 	if again := repCreatePlanHash(t, f, repCreateArgs()); again != hash {
 		t.Errorf("plan_sha256 changed to %s after a run of a bound task, want %s", again, hash)
+	}
+}
+
+// TestReplicationTaskCreate_HiddenDatasetRefused covers the paths that
+// pool.dataset.query hides (its internal_datasets_filters): the existence check
+// cannot see them, so the tool cannot prove that a target is new or that a
+// source exists. The query is answered by the "in" filter, and slow/ix-apps is
+// never in the fixture's dataset list, as the middleware would not return it.
+func TestReplicationTaskCreate_HiddenDatasetRefused(t *testing.T) {
+	hiddenTargets := []string{"slow/ix-apps", "slow/.system/x", "slow/ix-applications/x", "boot-pool/x"}
+	for _, target := range hiddenTargets {
+		t.Run("target "+target, func(t *testing.T) {
+			f := repCreateBase()
+			mock, calls := newRepCreateCaller(f)
+			args := repCreateArgs()
+			args["target_dataset"] = target
+			args["dry_run"] = true
+			result, err := callTool(t, mock, false, "truenas_replication_task_create", args)
+			text := toolError(t, result, err)
+			if !strings.Contains(text, `parameter "target_dataset"`) ||
+				!strings.Contains(text, "cannot prove that the target dataset is new") {
+				t.Errorf("dry run error = %q, want the hidden-target refusal", text)
+			}
+			if !strings.Contains(text, "nothing was created") {
+				t.Errorf("error = %q, want the nothing-was-created note", text)
+			}
+			if len(calls.methods) != 0 {
+				t.Errorf("middleware calls %v, want none", calls.methods)
+			}
+		})
+	}
+
+	// The same refusal on a write, before the hash is compared.
+	t.Run("write", func(t *testing.T) {
+		f := repCreateBase()
+		mock, calls := newRepCreateCaller(f)
+		args := repCreateArgs()
+		args["target_dataset"] = "slow/ix-apps"
+		args["expected_sha256"] = strings.Repeat("0", 64)
+		result, err := callTool(t, mock, false, "truenas_replication_task_create", args)
+		text := toolError(t, result, err)
+		if !strings.Contains(text, "cannot prove that the target dataset is new") {
+			t.Errorf("error = %q, want the hidden-target refusal", text)
+		}
+		if len(calls.methods) != 0 {
+			t.Errorf("middleware calls %v, want none", calls.methods)
+		}
+		if len(calls.createCalls) != 0 {
+			t.Errorf("replication.create calls = %d, want 0", len(calls.createCalls))
+		}
+	})
+
+	t.Run("hidden source", func(t *testing.T) {
+		f := repCreateBase()
+		f.datasets = append(f.datasets, "slow/ix-apps")
+		mock, calls := newRepCreateCaller(f)
+		args := repCreateArgs()
+		args["source_datasets"] = []any{"slow/ix-apps"}
+		args["dry_run"] = true
+		result, err := callTool(t, mock, false, "truenas_replication_task_create", args)
+		text := toolError(t, result, err)
+		if !strings.Contains(text, `parameter "source_datasets"`) ||
+			!strings.Contains(text, "cannot prove that the source dataset exists") {
+			t.Errorf("error = %q, want the hidden-source refusal", text)
+		}
+		if len(calls.methods) != 0 {
+			t.Errorf("middleware calls %v, want none", calls.methods)
+		}
+	})
+
+	t.Run("hidden exclude", func(t *testing.T) {
+		f := repCreateBase()
+		mock, calls := newRepCreateCaller(f)
+		args := repCreateArgs()
+		args["recursive"] = true
+		args["exclude"] = []any{"fast/a/.system"}
+		args["dry_run"] = true
+		result, err := callTool(t, mock, false, "truenas_replication_task_create", args)
+		text := toolError(t, result, err)
+		if !strings.Contains(text, `parameter "exclude"`) ||
+			!strings.Contains(text, "cannot prove that the excluded dataset exists") {
+			t.Errorf("error = %q, want the hidden-exclude refusal", text)
+		}
+		if len(calls.methods) != 0 {
+			t.Errorf("middleware calls %v, want none", calls.methods)
+		}
+	})
+}
+
+// TestReplicationTaskCreate_BoundTaskConfigChangesThePlan pins finding 2 of the
+// PR #54 review: the plan hash covers the bound task's whole configuration that
+// the dry run shows, so a change to its schedule or allow_empty between the dry
+// run and the write is refused.
+func TestReplicationTaskCreate_BoundTaskConfigChangesThePlan(t *testing.T) {
+	cases := []struct {
+		name   string
+		change func(task map[string]any)
+	}{
+		{
+			name: "schedule",
+			change: func(task map[string]any) {
+				task["schedule"] = map[string]any{
+					"minute": "30", "hour": "1", "dom": "*", "month": "*", "dow": "*", "begin": "00:00", "end": "23:59",
+				}
+			},
+		},
+		{
+			name: "allow_empty",
+			change: func(task map[string]any) {
+				task["allow_empty"] = false
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := repCreateBase()
+			hash := repCreatePlanHash(t, f, repCreateArgs())
+			tc.change(f.snapshotTasks[0])
+
+			mock, calls := newRepCreateCaller(f)
+			args := repCreateArgs()
+			args["expected_sha256"] = hash
+			result, err := callTool(t, mock, false, "truenas_replication_task_create", args)
+			text := toolError(t, result, err)
+			if !strings.Contains(text, "changed since the dry run") {
+				t.Errorf("error = %q, want the changed-plan refusal", text)
+			}
+			if len(calls.createCalls) != 0 {
+				t.Errorf("replication.create calls = %d, want 0", len(calls.createCalls))
+			}
+		})
 	}
 }
 
