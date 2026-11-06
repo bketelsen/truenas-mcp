@@ -72,7 +72,9 @@ when no test can catch it. The same PR appends 1 line to
 **Risk paths.** `.github/risk-paths.json` lists the high-risk paths; a PR that
 touches one gets `risk:high` from `.github/workflows/risk-paths.yml` and
 declares tier 3. Add a path when you add a file of that kind (signing, auth,
-publish, secrets, destructive operations, CI).
+publish, secrets, destructive operations, CI). Every non-test `server/*.go`
+file with a `DestructiveHint: new(true)` tool must match an entry:
+`test/risk-paths-coverage.test.mjs` fails otherwise.
 
 **Vendored files.** `scripts/lib/risk-paths.mjs` and
 `scripts/check-corrections.mjs` are copies from frostyard/core; never edit them

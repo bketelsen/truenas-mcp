@@ -69,7 +69,7 @@ A TrueNAS system notification with a level (INFO, WARNING, CRITICAL) and a dismi
 _Avoid_: warning, notification, event
 
 **Job**:
-A TrueNAS-tracked asynchronous operation with a numeric ID and a lifecycle state (WAITING, RUNNING, SUCCESS, FAILED, ABORTED). Most write tools return a Job ID at once and leave the status to the AI client, which polls `truenas_jobs_list`. 2 tools wait instead and report the outcome: `truenas_app_compose_update` polls `core.get_jobs` with `waitForJob` (`server/jobs.go`), and `truenas_snapshot_task_run` waits for the task state and verifies the snapshot.
+A TrueNAS-tracked asynchronous operation with a numeric ID and a lifecycle state (WAITING, RUNNING, SUCCESS, FAILED, ABORTED). Write tools that start an asynchronous job usually return its Job ID at once and leave the status to the AI client, which polls `truenas_jobs_list`. 2 tools wait instead and report the outcome: `truenas_app_compose_update` polls `core.get_jobs` with `waitForJob` (`server/jobs.go`), and `truenas_snapshot_task_run` waits for the task state and verifies the snapshot.
 _Avoid_: task, operation, process
 
 ## Example dialogue

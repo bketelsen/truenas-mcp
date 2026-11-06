@@ -48,6 +48,38 @@
     {
       "glob": "cmd/serve.go",
       "why": "auth: the API key, --tls-insecure and --enable-writes flags and their environment variables"
+    },
+    {
+      "glob": "server/tools_dataset.go",
+      "why": "destructive operations: truenas_dataset_delete removes a dataset and its data"
+    },
+    {
+      "glob": "server/tools_snapshot.go",
+      "why": "destructive operations: truenas_snapshot_delete removes a snapshot"
+    },
+    {
+      "glob": "server/tools_share.go",
+      "why": "destructive operations: truenas_smb_delete and truenas_nfs_delete remove shares and cut off clients"
+    },
+    {
+      "glob": "server/tools_app.go",
+      "why": "destructive operations: truenas_app_delete, truenas_app_update and truenas_app_update_all can remove app data or need a manual host-path restore"
+    },
+    {
+      "glob": "server/tools_app_configure.go",
+      "why": "destructive operations: truenas_app_configure overwrites stored app config; TrueNAS keeps no prior copy"
+    },
+    {
+      "glob": "server/tools_app_compose.go",
+      "why": "destructive operations: truenas_app_compose_update replaces the stored compose whole; TrueNAS keeps no prior copy"
+    },
+    {
+      "glob": "server/tools_data_protection.go",
+      "why": "destructive operations: truenas_snapshot_task_create sets retention that can delete snapshots this task did not make"
+    },
+    {
+      "glob": "server/tools_snapshot_task_run.go",
+      "why": "destructive operations: truenas_snapshot_task_run starts retention, which can delete expired snapshots"
     }
   ]
 }

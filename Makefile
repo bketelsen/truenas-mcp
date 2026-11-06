@@ -96,8 +96,8 @@ tidy:
 	$(GO) mod tidy
 	$(GO) mod verify
 
-## check: Run fmt, lint, and test
-check: fmt lint test
+## check: Developer gate: fmt, then the verify gate's static checks (lint and template included), then race tests
+check: fmt verify-static test
 
 ## verify-static: The non-mutating static checks shared by verify and ci (tidy diff, vet, gofmt -l, exact-pin lint)
 verify-static:

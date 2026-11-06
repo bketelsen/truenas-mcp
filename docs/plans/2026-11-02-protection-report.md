@@ -96,3 +96,8 @@ says what was left out and how to narrow the scope. Summary counts always cover 
 2. Schedules run in the NAS's local time. The interval is the longest gap between 2 scheduled runs, counted in UTC,
    so a daylight-saving change can shift 1 gap by up to 1 hour.
 3. Replication to another host is listed, but the remote copy is not checked.
+
+## References
+
+- Implements: the `truenas_protection_report` entry in [specs/tools.md](../specs/tools.md)
+- Context: [design/overview.md](../design/overview.md) (Key Patterns)

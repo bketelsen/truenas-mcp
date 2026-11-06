@@ -128,7 +128,7 @@ task covers its own dataset, and with `recursive` every descendant that is not a
 exclude entry or below one. The size cap is enforced in the tool
 (`protectionReportMaxChars` = 36,000), because on 2026-11-02 the live NAS had 114
 visible datasets and the indented report was about 33,000 characters. The design
-and its rules are in `docs/plans/2026-11-02-protection-report.md`; see
+and its rules are in [plans/2026-11-02-protection-report.md](../plans/2026-11-02-protection-report.md); see
 [specs/tools.md](../specs/tools.md) for the output.
 
 Each tool is defined inline with `s.AddTool(&mcp.Tool{...}, handlerFunc)`. The handler uses typed accessors from `server/params.go` to read MCP arguments, calls the TrueNAS API, and returns pretty-printed JSON.
@@ -275,7 +275,7 @@ GitHub Actions workflow `.github/workflows/ci.yml` (named `CI`) runs on push to 
 | `build` | `make build` matrix: linux/amd64, linux/arm64, darwin/arm64, windows/amd64 |
 | `release-config` | `goreleaser check` with the Pro distribution; fails on trusted runs if `GORELEASER_KEY` is missing, warns on fork PRs |
 
-Go version is read from `go.mod` via `go-version-file`. The other tool pins are `golangci-lint` and `node` in `mise.toml`/`mise.lock`; the Makefile reads the lint pin so `make lint` and CI cannot drift, and `make verify-template` requires the Node pin (22 or later).
+Go version is read from `go.mod` via `go-version-file`. The other tool pins are `golangci-lint` and `node` in `mise.toml`/`mise.lock`; the Makefile reads the lint pin so `make lint` and CI cannot drift, and `mise install` installs the pinned Node, while `make verify-template` accepts any Node.js 22 or later.
 
 ## Release Pipeline
 
