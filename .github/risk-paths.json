@@ -43,7 +43,7 @@
     },
     {
       "glob": "server/server.go",
-      "why": "destructive operations: the read-only gate that registers the 19 write tools only when writes are enabled"
+      "why": "destructive operations: the read-only gate that registers the 20 write tools only when writes are enabled"
     },
     {
       "glob": "cmd/serve.go",
@@ -80,6 +80,10 @@
     {
       "glob": "server/tools_snapshot_task_run.go",
       "why": "destructive operations: truenas_snapshot_task_run starts retention, which can delete expired snapshots"
+    },
+    {
+      "glob": "server/tools_replication_task.go",
+      "why": "destructive operations: truenas_replication_task_create makes a task whose runs write into the target dataset and whose retention deletes target snapshots"
     }
   ]
 }

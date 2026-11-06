@@ -1,7 +1,7 @@
 # Tools
 
-truenas-mcp registers 40 tools. Every name starts with `truenas_`. The 21
-read-only tools are always registered. The 19 tools marked **Write tool**
+truenas-mcp registers 41 tools. Every name starts with `truenas_`. The 21
+read-only tools are always registered. The 20 tools marked **Write tool**
 exist only when the server runs with `--enable-writes` or
 `TRUENAS_ENABLE_WRITES=true` (see
 [read-only by default](../concepts/read-only.md)).
@@ -149,6 +149,20 @@ The tool waits 120 seconds by default; `timeout_seconds` takes 10 to 600.
 ### `truenas_replication_task_list`
 
 Replication tasks with source, target, schedule, retention and last run. Never returns encryption keys or SSH credential secrets. No parameters.
+
+### `truenas_replication_task_create`
+
+**Write tool.** Registered only with `--enable-writes`.
+
+Create a replication task that copies datasets into a new target dataset on the same appliance. The task is a `PUSH` with the `LOCAL` transport; any other transport is refused.
+
+Parameters: `source_datasets`, `target_dataset`, `periodic_snapshot_task_ids` *required*; `name`, `recursive`, `exclude`, `retention_policy`, `lifetime_value`, `lifetime_unit`, `readonly`, `enabled`, `transport`, `dry_run`, `expected_sha256`.
+
+The task runs after each run of the periodic snapshot tasks it is bound to, so every source dataset must be covered by 1 of those tasks, and an enabled task needs enabled snapshot tasks. The target dataset must not exist yet and must lie outside the tree of every other snapshot and replication task: zettarepl creates the target on the first run. A path that TrueNAS hides from its dataset query (a boot-pool dataset, or 1 whose path holds `/.system`, `/ix-applications/` or `/ix-apps`) is refused as a target, a source or an exclude, because the tool cannot prove that such a dataset is new.
+
+`dry_run: true` returns the payload, the bound snapshot tasks and `plan_sha256`. A write needs `expected_sha256` set to that hash; it is refused when the arguments or the appliance changed after the dry run. The dry run applies the same checks as the write.
+
+`retention_policy` is `SOURCE` (default), `CUSTOM` or `NONE`; `lifetime_value` (1 to 10000) and `lifetime_unit` are required with `CUSTOM`. `readonly` is `SET` (default), `REQUIRE` or `IGNORE`. `exclude` needs `recursive: true`, and each entry must be below a source dataset. Needs the `REPLICATION_TASK_WRITE` role.
 
 ## Shares
 
@@ -312,6 +326,7 @@ settings, or are hard to undo.
 | `truenas_app_update_all` | The same as `truenas_app_update`, for every app with an app update at once. |
 | `truenas_snapshot_task_create` | Retention selects snapshots by dataset and naming schema, not by the task that made them, so the new task can delete older snapshots whose names match. |
 | `truenas_snapshot_task_run` | A run does what a scheduled run does: retention can delete expired snapshots, and linked replication tasks start. The dry run lists those replication tasks. Needs the `SNAPSHOT_TASK_WRITE` role. |
+| `truenas_replication_task_create` | Every run of the new task writes into the target dataset, and retention can delete snapshots stored there: policy `SOURCE` deletes the target snapshots that the source does not have, and `CUSTOM` deletes them by age. Needs the `REPLICATION_TASK_WRITE` role. |
 
 `idempotentHint: true` marks the write tools where a repeat of the same call
 has no further effect: the 4 deletes of datasets, snapshots and shares,

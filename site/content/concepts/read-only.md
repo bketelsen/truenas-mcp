@@ -8,7 +8,7 @@ on the appliance. The decision and its reasons are in
 ## The rule
 
 - The server always registers the 21 read-only tools.
-- It registers the 19 write tools only when you start it with
+- It registers the 20 write tools only when you start it with
   `--enable-writes` or with `TRUENAS_ENABLE_WRITES` set to a true value.
 - A write tool that is not registered does not exist for the client. It is
   absent from the tool list, and a call to it fails.
@@ -43,8 +43,9 @@ that the roles do not allow, in either mode.
 
 The appliance holds live data, and some write tools destroy it:
 `truenas_dataset_delete`, `truenas_snapshot_delete`, `truenas_app_delete`,
-`truenas_app_compose_update`, and the snapshot retention that
-`truenas_snapshot_task_create` and `truenas_snapshot_task_run` start. On a
+`truenas_app_compose_update`, the snapshot retention that
+`truenas_snapshot_task_create` and `truenas_snapshot_task_run` start, and the
+retention of the task that `truenas_replication_task_create` makes. On a
 first connection you have not checked any tool result yet. A server that
 registers every tool and relies on the client to ask first fails open: the
 server cannot enforce a client policy.

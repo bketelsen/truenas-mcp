@@ -83,32 +83,7 @@ func registerDataProtectionReadTools(s *mcp.Server, client truenas.Caller) {
 
 		tasks := make([]map[string]any, 0, len(entries))
 		for _, e := range entries {
-			encryption, _ := e["encryption"].(bool)
-			tasks = append(tasks, map[string]any{
-				"id":                         e["id"],
-				"name":                       e["name"],
-				"direction":                  e["direction"],
-				"transport":                  e["transport"],
-				"source_datasets":            listOrEmpty(e["source_datasets"]),
-				"target_dataset":             e["target_dataset"],
-				"recursive":                  e["recursive"],
-				"exclude":                    listOrEmpty(e["exclude"]),
-				"enabled":                    e["enabled"],
-				"auto":                       e["auto"],
-				"schedule":                   e["schedule"],
-				"ssh_credentials":            sshCredentialSummary(e["ssh_credentials"]),
-				"periodic_snapshot_task_ids": periodicSnapshotTaskIDs(e["periodic_snapshot_tasks"]),
-				"naming_schema":              listOrEmpty(e["naming_schema"]),
-				"also_include_naming_schema": listOrEmpty(e["also_include_naming_schema"]),
-				"readonly":                   e["readonly"],
-				"encryption":                 encryption, // the flag only; encryption_key never leaves the middleware
-				"retention": map[string]any{
-					"policy": e["retention_policy"],
-					"value":  e["lifetime_value"],
-					"unit":   e["lifetime_unit"],
-				},
-				"last_run": lastRun(e["state"], e["job"], true),
-			})
+			tasks = append(tasks, replicationTaskSummary(e))
 		}
 		return jsonValueResult(taskReport(entries, tasks))
 	})
@@ -256,6 +231,7 @@ func registerDataProtectionWriteTools(s *mcp.Server, client truenas.Caller) {
 	})
 
 	registerSnapshotTaskRunTool(s, client)
+	registerReplicationTaskCreateTool(s, client)
 }
 
 // defaultSnapshotNamingSchema is the naming schema the create tool sends when
@@ -361,6 +337,39 @@ func snapshotTaskSummary(e map[string]any) map[string]any {
 			"unit":  e["lifetime_unit"],
 		},
 		"last_run": lastRun(e["state"], nil, false),
+	}
+}
+
+// replicationTaskSummary projects a ReplicationEntry onto the fields both
+// replication tools report. It is an allow-list: a field that is not listed here
+// never reaches a result, so encryption_key, encryption_key_location and the
+// attributes of an ssh_credentials credential stay with the middleware.
+func replicationTaskSummary(e map[string]any) map[string]any {
+	encryption, _ := e["encryption"].(bool)
+	return map[string]any{
+		"id":                         e["id"],
+		"name":                       e["name"],
+		"direction":                  e["direction"],
+		"transport":                  e["transport"],
+		"source_datasets":            listOrEmpty(e["source_datasets"]),
+		"target_dataset":             e["target_dataset"],
+		"recursive":                  e["recursive"],
+		"exclude":                    listOrEmpty(e["exclude"]),
+		"enabled":                    e["enabled"],
+		"auto":                       e["auto"],
+		"schedule":                   e["schedule"],
+		"ssh_credentials":            sshCredentialSummary(e["ssh_credentials"]),
+		"periodic_snapshot_task_ids": periodicSnapshotTaskIDs(e["periodic_snapshot_tasks"]),
+		"naming_schema":              listOrEmpty(e["naming_schema"]),
+		"also_include_naming_schema": listOrEmpty(e["also_include_naming_schema"]),
+		"readonly":                   e["readonly"],
+		"encryption":                 encryption, // the flag only; encryption_key never leaves the middleware
+		"retention": map[string]any{
+			"policy": e["retention_policy"],
+			"value":  e["lifetime_value"],
+			"unit":   e["lifetime_unit"],
+		},
+		"last_run": lastRun(e["state"], e["job"], true),
 	}
 }
 
