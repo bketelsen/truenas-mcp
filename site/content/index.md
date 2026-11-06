@@ -37,7 +37,7 @@ hide:
 
     ---
 
-    A plain `truenas-mcp serve` registers only the 21 read-only tools. The 19 write tools exist only with `--enable-writes`. See [read-only by default](concepts/read-only.md).
+    A plain `truenas-mcp serve` registers only the 21 read-only tools. The 20 write tools exist only with `--enable-writes`. See [read-only by default](concepts/read-only.md).
 
 -   **Plain configuration**
 

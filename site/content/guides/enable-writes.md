@@ -9,11 +9,12 @@ expect.
 
 TrueNAS checks each call against the roles of the user that owns the API key.
 A write tool fails when the roles do not allow its call. Give the user only the
-roles for the writes you plan. 2 tools name their role:
+roles for the writes you plan. 3 tools name their role:
 
 | Tool | Role |
 | --- | --- |
 | `truenas_snapshot_task_run` | `SNAPSHOT_TASK_WRITE` |
+| `truenas_replication_task_create` | `REPLICATION_TASK_WRITE` |
 | `truenas_app_compose_update` | `APPS_WRITE` |
 
 ## Step 2: start the server in write mode
@@ -45,7 +46,7 @@ The server confirms the mode on stderr:
 Starting MCP server on stdio (writes enabled)...
 ```
 
-The client now lists 40 tools: the 21 read-only tools and the 19 write tools.
+The client now lists 41 tools: the 21 read-only tools and the 20 write tools.
 
 ## Step 3: set a client policy from the annotations
 
@@ -57,7 +58,7 @@ talks only to the 1 appliance it is configured for.
 | Class | Tools |
 | --- | --- |
 | Read-only (`readOnlyHint: true`) | Every tool that the read-only mode registers. |
-| Destructive (`destructiveHint: true`) | 11 write tools that can lose data or settings, or are hard to undo. The [tool reference](../reference/tools.md#destructive-tools) lists each one and why. |
+| Destructive (`destructiveHint: true`) | 12 write tools that can lose data or settings, or are hard to undo. The [tool reference](../reference/tools.md#destructive-tools) lists each one and why. |
 | Non-destructive write (`destructiveHint: false`) | `truenas_dataset_create`, `truenas_snapshot_create`, `truenas_smb_create`, `truenas_nfs_create`, `truenas_alert_dismiss`, `truenas_app_start`, `truenas_app_stop` and `truenas_app_restart`. |
 
 A reasonable client policy is:
@@ -86,6 +87,7 @@ would do:
 | --- | --- |
 | `truenas_snapshot_task_create` | `dry_run: true` returns the payload. |
 | `truenas_snapshot_task_run` | Dry run by default; `confirm: true` runs the task. |
+| `truenas_replication_task_create` | `dry_run: true` returns the payload, the bound snapshot tasks and the plan hash that the write needs. |
 | `truenas_app_configure` | `dry_run: true` returns the merged configuration and the changed paths. |
 | `truenas_app_compose_update` | `dry_run: true` returns the current compose, the diff and the hash that the write needs. |
 | `truenas_app_delete` | `dry_run: true` describes the delete. |

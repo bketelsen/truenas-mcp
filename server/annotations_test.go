@@ -61,6 +61,9 @@ var wantToolHints = map[string]toolHints{
 	// snapshots, and linked replication tasks start. Each run makes a new
 	// snapshot or fails on the name of this minute, so it is not idempotent.
 	"truenas_snapshot_task_run": {destructive: true},
+	// Every run of the created task writes into the target dataset, and its
+	// retention deletes target snapshots. Each accepted call creates a task.
+	"truenas_replication_task_create": {destructive: true},
 
 	// Non-destructive writes: additive or recoverable.
 	"truenas_dataset_create":  {idempotent: true},
