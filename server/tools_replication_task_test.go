@@ -898,7 +898,14 @@ func TestReplicationTaskCreate_SnapshotRunDoesNotChangeTheHash(t *testing.T) {
 // source exists. The query is answered by the "in" filter, and slow/ix-apps is
 // never in the fixture's dataset list, as the middleware would not return it.
 func TestReplicationTaskCreate_HiddenDatasetRefused(t *testing.T) {
-	hiddenTargets := []string{"slow/ix-apps", "slow/.system/x", "slow/ix-applications/x", "boot-pool/x"}
+	hiddenTargets := []string{
+		"slow/ix-apps",
+		"slow/.system/x",
+		"slow/.system-backup", // "/.system" is a substring rule, with no trailing slash
+		"slow/x/.systemd",
+		"slow/ix-applications/x",
+		"boot-pool/x",
+	}
 	for _, target := range hiddenTargets {
 		t.Run("target "+target, func(t *testing.T) {
 			f := repCreateBase()

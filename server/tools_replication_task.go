@@ -545,17 +545,22 @@ func checkDatasetPath(path string) error {
 
 // hiddenDatasetPath reports whether pool.dataset.query hides the path. The
 // middleware drops internal datasets from that query (its
-// internal_datasets_filters): a dataset of the boot pool (boot-pool or
-// freenas-boot), 1 whose id contains "/.system/", 1 whose id contains
-// "/ix-applications/", and 1 whose id contains "/ix-apps". The path gets a
-// trailing "/" first, so a hidden dataset also matches when it is the last name
-// in the path ("slow/.system", "slow/ix-applications").
+// internal_datasets_filters), by the same 4 rules: the pool part is "boot-pool"
+// or "freenas-boot"; the id contains "/.system"; the id contains
+// "/ix-applications/"; or the id contains "/ix-apps". The first 3 are substring
+// tests, so "/.system" needs no trailing slash: "slow/.system-backup" is hidden
+// the same way. The path gets a trailing "/" for the last 2 rules, so a hidden
+// dataset also matches when its name ends the path ("slow/ix-applications",
+// "slow/ix-apps").
 func hiddenDatasetPath(path string) bool {
 	if pool, _, _ := strings.Cut(path, "/"); pool == "boot-pool" || pool == "freenas-boot" {
 		return true
 	}
+	if strings.Contains(path, "/.system") {
+		return true
+	}
 	padded := path + "/"
-	for _, marker := range []string{"/.system/", "/ix-applications/", "/ix-apps"} {
+	for _, marker := range []string{"/ix-applications/", "/ix-apps"} {
 		if strings.Contains(padded, marker) {
 			return true
 		}
