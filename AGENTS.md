@@ -119,7 +119,8 @@ category's `TEMPLATE.md`** and follows its structure:
 - `docs/plans/` — order of work. Phases with "Done when" outcomes.
 
 After a source change, update [docs/design/overview.md](docs/design/overview.md),
-[docs/specs/tools.md](docs/specs/tools.md) and [README.md](README.md), plus
+[docs/specs/tools.md](docs/specs/tools.md), [README.md](README.md) and the
+affected user pages in `site/content/` (the docs site, `make site`), plus
 [docs/specs/api-audit.md](docs/specs/api-audit.md) when a middleware method or
 the payload it receives changes.
 

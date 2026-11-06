@@ -2,6 +2,8 @@
 
 MCP server that exposes TrueNAS SCALE management capabilities to AI assistants like Claude.
 
+Documentation: <https://bketelsen.github.io/truenas-mcp/>
+
 Connects to TrueNAS SCALE (Goldeye+) via the WebSocket JSON-RPC API and exposes storage, sharing, system, and app management as MCP tools over stdio.
 
 ## Requirements
