@@ -1,0 +1,107 @@
+# yaml-language-server: $schema=https://jaywhj.github.io/mkdocs-materialx/schema.json
+# The truenas-mcp documentation site: ProperDocs with the MaterialX theme. The
+# layout comes from frostyard/core ADR-0070. `make site` builds it into
+# site/dist; `make site-serve` previews it at
+# http://127.0.0.1:8000/truenas-mcp/.
+
+site_name: truenas-mcp
+site_url: https://bketelsen.github.io/truenas-mcp/
+site_description: An MCP server that exposes TrueNAS SCALE management capabilities to AI assistants.
+site_author: Brian Ketelsen
+copyright: truenas-mcp is MIT licensed.
+
+repo_name: bketelsen/truenas-mcp
+repo_url: https://github.com/bketelsen/truenas-mcp
+edit_uri: edit/main/site/content/
+
+docs_dir: content
+site_dir: dist
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+nav:
+  - Home: index.md
+  - Get started:
+      - Install: getting-started/install.md
+      - First connection: getting-started/first-connection.md
+  - Concepts:
+      - Read-only by default: concepts/read-only.md
+  - Guides:
+      - Enable write tools: guides/enable-writes.md
+      - App updates and recovery: guides/app-updates.md
+  - Reference:
+      - Configuration: reference/configuration.md
+      - Tools: reference/tools.md
+  - Contributing:
+      - Build from source: contributing/build.md
+
+theme:
+  name: materialx
+  logo: assets/logo.svg
+  favicon: assets/logo.svg
+  language: en
+  font: false
+  # Frostyard surfaces are solid; no frosted-glass header.
+  topbar_style: primary
+  palette:
+    - scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    - scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  features:
+    - content.action.edit
+    - content.code.copy
+    - navigation.footer
+    - navigation.sections
+    - navigation.tabs
+    - search.highlight
+    - search.share
+    - toc.follow
+
+plugins:
+  - search
+
+extra_css:
+  - stylesheets/frostyard.css
+
+extra:
+  generator: false
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/bketelsen/truenas-mcp
+      name: truenas-mcp on GitHub
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true

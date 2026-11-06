@@ -1,4 +1,4 @@
-.PHONY: all build install run clean fmt vet lint lint-version-check test test-cover tidy check verify-static verify-template verify ci test-scripts completions manpages release-check snapshot bump help
+.PHONY: all build install run clean fmt vet lint lint-version-check test test-cover tidy check verify-static verify-template verify ci test-scripts completions manpages release-check snapshot bump help site site-serve
 
 # Build variables
 BINARY     := truenas-mcp
@@ -174,6 +174,25 @@ bump:
 		echo "Tagged version $$version"; \
 		echo "Pushing tag $$version to origin..."; \
 		git push origin $$version
+
+# The documentation site (site/), built with pinned ProperDocs and MaterialX
+# (frostyard/core ADR-0070, the frostyard-docs-site skill's site.mk). `make ci`
+# does not build the site, so a change that does not touch site/ needs no
+# Python toolchain.
+SITE_VENV := build/site-venv
+
+$(SITE_VENV)/bin/properdocs: site/requirements.txt
+	python3 -m venv $(SITE_VENV)
+	$(SITE_VENV)/bin/pip install -q --require-hashes -r site/requirements.txt
+	touch $@
+
+## site: Build the documentation site in strict mode into site/dist (needs Python 3)
+site: $(SITE_VENV)/bin/properdocs
+	$(SITE_VENV)/bin/properdocs build --strict -f site/properdocs.yml
+
+## site-serve: Preview the documentation site (127.0.0.1 port 8000, path /truenas-mcp/)
+site-serve: $(SITE_VENV)/bin/properdocs
+	$(SITE_VENV)/bin/properdocs serve -f site/properdocs.yml
 
 ## help: Show this help message
 help:

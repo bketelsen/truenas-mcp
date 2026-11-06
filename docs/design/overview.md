@@ -287,6 +287,18 @@ Modeled on `frostyard/updex`. Three pieces:
 
 Generated directories `build/`, `dist/`, `completions/`, `manpages/` are gitignored. `scripts/first-contact.sh` executes `build/truenas-mcp`.
 
+## Documentation Site
+
+User documentation is a ProperDocs + MaterialX site in `site/`, from frostyard/core's `frostyard-docs-site` skill ([org ADR-0070](../org-adrs.md)). `docs/` stays the maintainer tree; the site holds install, first connection, concepts, guides and reference for users, and its facts come from this tree and the code.
+
+- `site/properdocs.yml` — site name, `site_url` `https://bketelsen.github.io/truenas-mcp/`, navigation, the MaterialX theme with `font: false`, and the Markdown extensions. `docs_dir: content`, `site_dir: dist`; `site/dist/` is gitignored.
+- `site/content/` — the pages, `stylesheets/frostyard.css` (a copy of the skill's Frostyard palette) and `assets/logo.svg`.
+- `site/requirements.in` names `mkdocs-materialx`; `site/requirements.txt` is its hash-locked closure from `uv pip compile --universal --generate-hashes site/requirements.in -o site/requirements.txt`. Never edit the lock by hand.
+- `make site` installs the lock into `build/site-venv` with `pip install --require-hashes` and runs `properdocs build --strict`, so a broken relative link or anchor fails. `make site-serve` previews it at `http://127.0.0.1:8000/truenas-mcp/`. `make ci` does not build the site.
+- `.github/workflows/site.yml` (named `Site`) runs `make site` on a pull request that touches `site/**`, the `Makefile` or itself, and on `main` it uploads `site/dist` and deploys it with `actions/deploy-pages`. Actions are SHA-pinned, `permissions: {}` at the top, `contents: read` for the build job and `pages: write` plus `id-token: write` only for the deploy job. The repository's Pages source must be GitHub Actions.
+
+A change to user-visible behavior (a tool, a flag, a variable) updates the matching page in `site/content/` in the same pull request, beside [specs/tools.md](../specs/tools.md) and the README.
+
 ## MCP Tools Reference
 
 See [specs/tools.md](../specs/tools.md) for the complete tool catalog with parameters.
@@ -305,6 +317,8 @@ make verify       # static checks, template checks + tests (credential-free gate
 make verify-template  # template gate alone (needs Node.js 22 or later)
 make test-scripts # run the gofmt check self-test
 make ci           # verify-static + race tests + cross-builds (+ corrections against BASE)
+make site         # docs site, strict build into site/dist (needs Python 3)
+make site-serve   # preview the docs site at http://127.0.0.1:8000/truenas-mcp/
 make help         # list all targets
 ```
 

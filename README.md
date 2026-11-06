@@ -2,6 +2,8 @@
 
 MCP server that exposes TrueNAS SCALE management capabilities to AI assistants like Claude.
 
+Documentation: <https://bketelsen.github.io/truenas-mcp/>
+
 Connects to TrueNAS SCALE (Goldeye+) via the WebSocket JSON-RPC API and exposes storage, sharing, system, and app management as MCP tools over stdio.
 
 ## Requirements
@@ -17,7 +19,7 @@ Prebuilt binaries for Linux, macOS, and Windows are attached to every
 `.deb`, `.rpm`, and `.apk` packages that also install shell completions and a
 man page. A `dev` pre-release tracks the latest `main` commit.
 
-Every release asset is signed with GitHub build provenance. Verify a download with:
+Every asset of a tagged release is signed with GitHub build provenance (the `dev` pre-release is not). Verify a download with:
 
 ```bash
 gh attestation verify truenas-mcp_*_linux_amd64.tar.gz --repo bketelsen/truenas-mcp
@@ -157,7 +159,7 @@ Tools marked with `*` are excluded by default and are registered only with `--en
 | `truenas_app_delete` | Delete an app (needs `confirm` = app name; `dry_run` shows the plan; returns a job ID) `*` |
 | `truenas_jobs_list` | Recent TrueNAS jobs, optionally filtered by state or method |
 
-Every middleware method these tools call was audited against TrueNAS 27.0 on 2026-10-22. See [docs/specs/api-audit.md](docs/specs/api-audit.md) for the method table and for the fallbacks that keep older releases working.
+The middleware methods these tools call were audited against TrueNAS 27.0 on 2026-10-22; the audit also records later checks of methods added by later tools, against a live appliance or the middleware source. See [docs/specs/api-audit.md](docs/specs/api-audit.md) for the method table and for the fallbacks that keep older releases working.
 
 ## Tool Annotations
 
