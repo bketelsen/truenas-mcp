@@ -38,6 +38,7 @@ main.go                  Entry point — uses Charm fang CLI framework
 └── server/
     ├── server.go         MCP server setup and tool registration
     ├── tools_system.go   System/disk/network query tools + shared schema helpers
+    ├── tools_filesystem.go  Read-only stat and ACL type tool for paths below /mnt
     ├── tools_pool.go     ZFS pool tools
     ├── tools_dataset.go  Dataset list/get/create/delete tools
     ├── tools_snapshot.go Snapshot list/get/create/delete tools
@@ -118,6 +119,8 @@ and calls these only when `readOnly` is false:
   `registerAppConfigureTools`, `registerAppComposeTools`
 
 Report-style read tools are registered alongside the domain tools: `tools_reports.go` provides the aggregated health report plus job listing, and `tools_app.go` includes the read-only app update report as well as the app update write tools.
+
+`tools_filesystem.go` provides `truenas_filesystem_stat`, a read-only Tool that validates and cleans a path below `/mnt`, then joins `filesystem.stat` metadata with the simplified ACL type from `filesystem.getacl`. It rejects a path that resolves outside `/mnt` before it requests ACL data.
 
 Both app read reports are projections, not pass-throughs. `truenas_app_list` maps every `app.query` entry through `summarizeApp` (`server/tools_app.go`) onto `name`, `id`, `state`, `version`, `human_version`, `latest_version`, `latest_app_version`, `upgrade_available`, `image_updates_available`, `custom_app`, `migrated`, `action_required`, `portals`, plus `train` from `metadata.train` and `containers` (the container count) from `active_workloads.containers`; `notes`, `metadata`, `active_workloads` and `config` are dropped, and the entries are sorted by name under `summary.apps_total`. The raw payload was about 104,700 characters for 13 apps, and the Pi Pocket MCP client cuts a tool result at 40,000 characters (first and last 20,000 kept), so on 2026-11-02 only 7 of 13 apps reached the caller. `TestAppList_StaysUnderClientCutoff` in `tools_app_test.go` reproduces that size and pins the result under 40,000 characters. `truenas_app_get` remains the full-detail call for one app.
 

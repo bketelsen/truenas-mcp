@@ -92,8 +92,9 @@ The read-only server registers these tools, among others:
 - `truenas_app_list`
 - `truenas_apps_update_report`
 - `truenas_jobs_list`
+- `truenas_filesystem_stat`
 
-The read-only server registers exactly 21 tools. No write tool must appear:
+The read-only server registers exactly 22 tools. No write tool must appear:
 no tool that creates, deletes, starts, stops, restarts, updates, configures,
 runs or dismisses something. If one appears, the server runs with writes
 enabled: stop it and check `TRUENAS_ENABLE_WRITES`. The

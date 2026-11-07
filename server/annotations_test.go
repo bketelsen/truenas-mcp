@@ -22,6 +22,7 @@ var wantToolHints = map[string]toolHints{
 	"truenas_system_info":           {readOnly: true},
 	"truenas_disk_list":             {readOnly: true},
 	"truenas_network_list":          {readOnly: true},
+	"truenas_filesystem_stat":       {readOnly: true},
 	"truenas_pool_list":             {readOnly: true},
 	"truenas_pool_get":              {readOnly: true},
 	"truenas_dataset_list":          {readOnly: true},

@@ -19,6 +19,7 @@ func New(client truenas.Caller, readOnly bool) *mcp.Server {
 	// Read-only tools — always registered
 	registerHealthReportTools(s, client)
 	registerSystemTools(s, client)
+	registerFilesystemReadTools(s, client)
 	registerPoolTools(s, client)
 	registerDatasetReadTools(s, client)
 	registerSnapshotReadTools(s, client)
