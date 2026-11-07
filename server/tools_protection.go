@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -277,40 +278,28 @@ func protectionDatasetQueryOptions() map[string]any {
 func loadProtectionInputs(client truenas.Caller, filters [][]any) (protectionInputs, error) {
 	in := protectionInputs{}
 
-	raw, err := client.Call("pool.dataset.query", filters, protectionDatasetQueryOptions())
+	raw, callErr := client.Call("pool.dataset.query", filters, protectionDatasetQueryOptions())
+	datasetRows, err := protectionQueryRows("pool.dataset.query", raw, callErr)
 	if err != nil {
-		return in, fmt.Errorf("pool.dataset.query: %w", err)
-	}
-	var datasetRows []map[string]any
-	if err := json.Unmarshal(raw, &datasetRows); err != nil {
-		return in, fmt.Errorf("parsing pool.dataset.query: %w", err)
+		return in, err
 	}
 
-	raw, err = client.Call("pool.snapshottask.query")
+	raw, callErr = client.Call("pool.snapshottask.query")
+	taskRows, err := protectionQueryRows("pool.snapshottask.query", raw, callErr)
 	if err != nil {
-		return in, fmt.Errorf("pool.snapshottask.query: %w", err)
-	}
-	var taskRows []map[string]any
-	if err := json.Unmarshal(raw, &taskRows); err != nil {
-		return in, fmt.Errorf("parsing pool.snapshottask.query: %w", err)
+		return in, err
 	}
 
-	raw, err = client.Call("replication.query")
+	raw, callErr = client.Call("replication.query")
+	replicationRows, err := protectionQueryRows("replication.query", raw, callErr)
 	if err != nil {
-		return in, fmt.Errorf("replication.query: %w", err)
-	}
-	var replicationRows []map[string]any
-	if err := json.Unmarshal(raw, &replicationRows); err != nil {
-		return in, fmt.Errorf("parsing replication.query: %w", err)
+		return in, err
 	}
 
-	raw, err = callSnapshot(client, "query", filters, snapshotQueryOptions())
+	raw, callErr = callSnapshot(client, "query", filters, snapshotQueryOptions())
+	snapshotRows, err := protectionQueryRows("snapshot.query", raw, callErr)
 	if err != nil {
-		return in, fmt.Errorf("snapshot.query: %w", err)
-	}
-	var snapshotRows []map[string]any
-	if err := json.Unmarshal(raw, &snapshotRows); err != nil {
-		return in, fmt.Errorf("parsing snapshot.query: %w", err)
+		return in, err
 	}
 
 	// The apps pool only sharpens the limits text. A release without
@@ -331,6 +320,19 @@ func loadProtectionInputs(client truenas.Caller, filters [][]any) (protectionInp
 	in.replications = protectionReplicationsFromRows(replicationRows)
 	in.snapshots = protectionSnapshotsFromRows(snapshotRows)
 	return in, nil
+}
+
+// protectionQueryRows runs the common call-result check and row decoding used
+// by the protection report's required middleware queries.
+func protectionQueryRows(label string, raw json.RawMessage, err error) ([]map[string]any, error) {
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", label, err)
+	}
+	var rows []map[string]any
+	if err := json.Unmarshal(raw, &rows); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", label, err)
+	}
+	return rows, nil
 }
 
 // protectionPoolNamePattern is the shape of a pool name the limits text may
@@ -462,12 +464,7 @@ func protectionDatasetRowFor(d protectionDataset, in protectionInputs, taskByID 
 	var maxAgeMinutes float64
 	hasMaxAge := false
 	if len(intervals) > 0 {
-		smallest := intervals[0]
-		for _, v := range intervals[1:] {
-			if v < smallest {
-				smallest = v
-			}
-		}
+		smallest := slices.Min(intervals)
 		maxAgeMinutes = 2 * float64(smallest)
 		hasMaxAge = true
 		maxAge := protectionRound1(maxAgeMinutes / 60)
@@ -890,55 +887,41 @@ func scheduleIntervalMinutes(schedule any) (int, bool) {
 		return s, true
 	}
 
-	minuteField, ok := field("minute", "")
-	if !ok {
-		return 0, false
+	fields := map[string]string{}
+	for _, spec := range []struct{ key, def string }{
+		{"minute", ""}, {"hour", ""}, {"dom", "*"}, {"month", "*"},
+		{"dow", "*"}, {"begin", "00:00"}, {"end", "23:59"},
+	} {
+		value, ok := field(spec.key, spec.def)
+		if !ok {
+			return 0, false
+		}
+		fields[spec.key] = value
 	}
-	hourField, ok := field("hour", "")
-	if !ok {
-		return 0, false
-	}
-	domField, ok := field("dom", "*")
-	if !ok {
-		return 0, false
-	}
-	monthField, ok := field("month", "*")
-	if !ok {
-		return 0, false
-	}
-	dowField, ok := field("dow", "*")
-	if !ok {
-		return 0, false
-	}
-	beginField, ok := field("begin", "00:00")
-	if !ok {
-		return 0, false
-	}
-	endField, ok := field("end", "23:59")
-	if !ok {
-		return 0, false
-	}
+	minuteField, hourField := fields["minute"], fields["hour"]
+	domField, monthField, dowField := fields["dom"], fields["month"], fields["dow"]
+	beginField, endField := fields["begin"], fields["end"]
 
-	minutes, ok := protectionCronValues(minuteField, 0, 59, nil)
-	if !ok {
-		return 0, false
+	cronFields := []struct {
+		value    string
+		min, max int
+		names    map[string]int
+	}{
+		{minuteField, 0, 59, nil},
+		{hourField, 0, 23, nil},
+		{domField, 1, 31, nil},
+		{monthField, 1, 12, protectionMonthNames},
+		{dowField, 0, 7, protectionWeekdayNames},
 	}
-	hours, ok := protectionCronValues(hourField, 0, 23, nil)
-	if !ok {
-		return 0, false
+	cronValues := make([]map[int]bool, len(cronFields))
+	for i, spec := range cronFields {
+		values, ok := protectionCronValues(spec.value, spec.min, spec.max, spec.names)
+		if !ok {
+			return 0, false
+		}
+		cronValues[i] = values
 	}
-	doms, ok := protectionCronValues(domField, 1, 31, nil)
-	if !ok {
-		return 0, false
-	}
-	months, ok := protectionCronValues(monthField, 1, 12, protectionMonthNames)
-	if !ok {
-		return 0, false
-	}
-	dows, ok := protectionCronValues(dowField, 0, 7, protectionWeekdayNames)
-	if !ok {
-		return 0, false
-	}
+	minutes, hours, doms, months, dows := cronValues[0], cronValues[1], cronValues[2], cronValues[3], cronValues[4]
 	if dows[7] { // 7 and 0 both name Sunday
 		delete(dows, 7)
 		dows[0] = true
