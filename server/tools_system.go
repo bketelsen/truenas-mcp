@@ -46,7 +46,7 @@ func arrayProp(desc string) map[string]any {
 }
 
 func jsonResult(raw json.RawMessage) (*mcp.CallToolResult, error) {
-	return jsonValueResult(json.RawMessage(raw))
+	return jsonValueResult(raw)
 }
 
 func registerSystemTools(s *mcp.Server, client truenas.Caller) {

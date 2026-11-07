@@ -90,6 +90,306 @@ func TestHealthReport_PartialFailure(t *testing.T) {
 	}
 }
 
+func TestHealthReport_Golden(t *testing.T) {
+	tests := []struct {
+		name      string
+		responses map[string]struct {
+			raw string
+			err error
+		}
+		want string
+	}{
+		{
+			name: "all sections healthy",
+			responses: map[string]struct {
+				raw string
+				err error
+			}{
+				"system.info":  {raw: `{"hostname":"nas","version":"25.10"}`},
+				"system.state": {raw: `"READY"`},
+				"pool.query":   {raw: `[{"name":"tank","healthy":true,"status":"ONLINE"}]`},
+				"disk.query":   {raw: `[{"name":"sda","model":"disk"}]`},
+				"alert.list":   {raw: `[]`},
+			},
+			want: `{
+  "details": {
+    "alerts": [],
+    "disks": [
+      {
+        "model": "disk",
+        "name": "sda"
+      }
+    ],
+    "pools": [
+      {
+        "healthy": true,
+        "name": "tank",
+        "status": "ONLINE"
+      }
+    ],
+    "system": {
+      "hostname": "nas",
+      "version": "25.10"
+    },
+    "system_state": "READY"
+  },
+  "errors": {},
+  "summary": {
+    "alerts_critical": 0,
+    "alerts_warning": 0,
+    "failed_sections": 0,
+    "pools_unhealthy": 0,
+    "status": "ok"
+  }
+}`,
+		},
+		{
+			name: "pools unhealthy counters",
+			responses: map[string]struct {
+				raw string
+				err error
+			}{
+				"system.info":  {raw: `{}`},
+				"system.state": {raw: `"READY"`},
+				"pool.query": {raw: `[
+  {"name":"false","healthy":false},
+  {"name":"warning","warning":true},
+  {"name":"degraded","status":"DEGRADED"},
+  42,
+  {"name":"online","healthy":true,"warning":false,"status":"ONLINE"}
+]`},
+				"disk.query": {raw: `[]`},
+				"alert.list": {raw: `[]`},
+			},
+			want: `{
+  "details": {
+    "alerts": [],
+    "disks": [],
+    "pools": [
+      {
+        "healthy": false,
+        "name": "false"
+      },
+      {
+        "name": "warning",
+        "warning": true
+      },
+      {
+        "name": "degraded",
+        "status": "DEGRADED"
+      },
+      42,
+      {
+        "healthy": true,
+        "name": "online",
+        "status": "ONLINE",
+        "warning": false
+      }
+    ],
+    "system": {},
+    "system_state": "READY"
+  },
+  "errors": {},
+  "summary": {
+    "alerts_critical": 0,
+    "alerts_warning": 0,
+    "failed_sections": 0,
+    "pools_unhealthy": 3,
+    "status": "critical"
+  }
+}`,
+		},
+		{
+			name: "alert level counters",
+			responses: map[string]struct {
+				raw string
+				err error
+			}{
+				"system.info":  {raw: `{}`},
+				"system.state": {raw: `"READY"`},
+				"pool.query":   {raw: `[{"healthy":true,"status":"ONLINE"}]`},
+				"disk.query":   {raw: `[]`},
+				"alert.list": {raw: `[
+  {"level":"CRITICAL"},
+  {"level":"warning"},
+  {"level":"WARN"},
+  {"level":"INFO"},
+  {},
+  42
+]`},
+			},
+			want: `{
+  "details": {
+    "alerts": [
+      {
+        "level": "CRITICAL"
+      },
+      {
+        "level": "warning"
+      },
+      {
+        "level": "WARN"
+      },
+      {
+        "level": "INFO"
+      },
+      {},
+      42
+    ],
+    "disks": [],
+    "pools": [
+      {
+        "healthy": true,
+        "status": "ONLINE"
+      }
+    ],
+    "system": {},
+    "system_state": "READY"
+  },
+  "errors": {},
+  "summary": {
+    "alerts_critical": 1,
+    "alerts_warning": 2,
+    "failed_sections": 0,
+    "pools_unhealthy": 0,
+    "status": "critical"
+  }
+}`,
+		},
+		{
+			name: "transport and parse failures",
+			responses: map[string]struct {
+				raw string
+				err error
+			}{
+				"system.info":  {raw: `{}`},
+				"system.state": {raw: `"READY"`},
+				"pool.query":   {raw: `{bad`},
+				"disk.query":   {err: fmt.Errorf("disk unavailable")},
+				"alert.list":   {raw: `[]`},
+			},
+			want: `{
+  "details": {
+    "alerts": [],
+    "system": {},
+    "system_state": "READY"
+  },
+  "errors": {
+    "disks": "disk unavailable",
+    "pools": "invalid character 'b' looking for beginning of object key string"
+  },
+  "summary": {
+    "alerts_critical": 0,
+    "alerts_warning": 0,
+    "failed_sections": 2,
+    "pools_unhealthy": 0,
+    "status": "critical"
+  }
+}`,
+		},
+		{
+			name: "warnings only",
+			responses: map[string]struct {
+				raw string
+				err error
+			}{
+				"system.info":  {raw: `{}`},
+				"system.state": {raw: `"READY"`},
+				"pool.query":   {raw: `[{"healthy":true,"status":"ONLINE"}]`},
+				"disk.query":   {raw: `[]`},
+				"alert.list":   {raw: `[{"level":"WARNING"},{"level":"warn"}]`},
+			},
+			want: `{
+  "details": {
+    "alerts": [
+      {
+        "level": "WARNING"
+      },
+      {
+        "level": "warn"
+      }
+    ],
+    "disks": [],
+    "pools": [
+      {
+        "healthy": true,
+        "status": "ONLINE"
+      }
+    ],
+    "system": {},
+    "system_state": "READY"
+  },
+  "errors": {},
+  "summary": {
+    "alerts_critical": 0,
+    "alerts_warning": 2,
+    "failed_sections": 0,
+    "pools_unhealthy": 0,
+    "status": "warning"
+  }
+}`,
+		},
+		{
+			name: "pools and alerts are not lists",
+			responses: map[string]struct {
+				raw string
+				err error
+			}{
+				"system.info":  {raw: `{}`},
+				"system.state": {raw: `"READY"`},
+				"pool.query":   {raw: `{"healthy":false,"status":"DEGRADED"}`},
+				"disk.query":   {raw: `[]`},
+				"alert.list":   {raw: `{"level":"CRITICAL"}`},
+			},
+			want: `{
+  "details": {
+    "alerts": {
+      "level": "CRITICAL"
+    },
+    "disks": [],
+    "pools": {
+      "healthy": false,
+      "status": "DEGRADED"
+    },
+    "system": {},
+    "system_state": "READY"
+  },
+  "errors": {},
+  "summary": {
+    "alerts_critical": 0,
+    "alerts_warning": 0,
+    "failed_sections": 0,
+    "pools_unhealthy": 0,
+    "status": "ok"
+  }
+}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockCaller{CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+				response, ok := tt.responses[method]
+				if !ok {
+					t.Fatalf("unexpected method %q", method)
+				}
+				if response.err != nil {
+					return nil, response.err
+				}
+				return json.RawMessage(response.raw), nil
+			}}
+
+			result, err := callTool(t, mock, true, "truenas_health_report", nil)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got := resultText(t, result); got != tt.want {
+				t.Errorf("result text mismatch\ngot:\n%s\nwant:\n%s", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestJobsList_WithFilters(t *testing.T) {
 	mock := &mockCaller{
 		CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
