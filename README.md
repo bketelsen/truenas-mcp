@@ -122,6 +122,7 @@ Tools marked with `*` are excluded by default and are registered only with `--en
 | `truenas_system_info` | System hostname, version, uptime, platform |
 | `truenas_disk_list` | Physical disks with health status |
 | `truenas_network_list` | Network interfaces and IPs |
+| `truenas_filesystem_stat` | Owner, mode, permissions, file type and ACL type for 1 path below `/mnt` |
 | `truenas_pool_list` | ZFS pools with status and health |
 | `truenas_pool_get` | Detailed pool info including topology |
 | `truenas_dataset_list` | Datasets with usage and compression |

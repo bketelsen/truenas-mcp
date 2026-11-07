@@ -1,6 +1,6 @@
 # Tools
 
-truenas-mcp registers 41 tools. Every name starts with `truenas_`. The 21
+truenas-mcp registers 42 tools. Every name starts with `truenas_`. The 22
 read-only tools are always registered. The 20 tools marked **Write tool**
 exist only when the server runs with `--enable-writes` or
 `TRUENAS_ENABLE_WRITES=true` (see
@@ -43,6 +43,14 @@ Physical disks with size, model, serial, health and the pool of each disk. No pa
 ### `truenas_network_list`
 
 Network interfaces with IP addresses and link state. No parameters.
+
+## Filesystem
+
+### `truenas_filesystem_stat`
+
+Owner information (`uid`, `gid`, `user`, `group`), raw mode and formatted permissions, file type, resolved path and ACL type for 1 path below `/mnt`. The result also includes `realpath`, `acl_type` and `acl_trivial`; it does not return ACL entries.
+
+Parameters: `path` *required*. It refuses paths outside `/mnt`, `..` segments and control characters. A path that resolves outside `/mnt` (for example through a symlink) is refused, and the result then holds no stat data.
 
 ## Pools and datasets
 

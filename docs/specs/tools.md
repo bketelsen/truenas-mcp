@@ -38,6 +38,22 @@ List network interfaces with IP addresses and link status.
 - Parameters: none
 - API: `interface.query`
 
+## Filesystem Tools (`tools_filesystem.go`)
+
+### `truenas_filesystem_stat`
+Return owner information (`uid`, `gid`, `user`, `group`), raw mode and formatted permissions, file type, resolved path and ACL type for 1 path below `/mnt`.
+- Parameters:
+  - `path` (string, required) — absolute path below `/mnt`, for example `/mnt/tank/data`
+- Path rules:
+  - The Server refuses a missing or non-string value, an empty string, NUL or control characters, a relative path and every `..` segment.
+  - The Server cleans the path with Go's `path.Clean`, then requires the cleaned path to start with `/mnt/`.
+  - `/mnt`, `/mnt/`, `/mntx/a`, `/mnt2/a` and paths outside `/mnt` are refused.
+- API calls:
+  - `filesystem.stat` with the cleaned path as 1 parameter.
+  - `filesystem.getacl` with the cleaned `realpath` and `true` for simplified ACL output, only after the resolved path passes the `/mnt/` guard. A `realpath` that is missing or outside `/mnt/` (for example through a symlink) is an error, and the result holds no stat data.
+- Output keys: `path`, `realpath`, `type`, `uid`, `gid`, `user`, `group`, `mode`, `permissions`, `acl_type`, `acl_trivial`.
+  `user` and `group` are null when the stat response has null values. `permissions` is the mode masked with `07777` and formatted with 4 octal digits. The tool returns no ACL entries.
+
 ## Pool Tools (`tools_pool.go`)
 
 ### `truenas_pool_list`
