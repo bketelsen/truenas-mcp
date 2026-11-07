@@ -2024,3 +2024,108 @@ func TestProtectionReport_MalformedAnswers(t *testing.T) {
 		}
 	})
 }
+
+func TestScheduleIntervalMinutes_LoadedFields(t *testing.T) {
+	keys := []string{"minute", "hour", "dom", "month", "dow", "begin", "end"}
+	for _, key := range keys {
+		for _, value := range []any{nil, "", "  ", float64(5)} {
+			name := fmt.Sprintf("%s=%v", key, value)
+			t.Run(name, func(t *testing.T) {
+				schedule := map[string]any{"minute": "0", "hour": "0", key: value}
+				got, ok := scheduleIntervalMinutes(schedule)
+				if got != 0 || ok {
+					t.Errorf("scheduleIntervalMinutes(%v) = (%d, %v), want (0, false)", schedule, got, ok)
+				}
+			})
+		}
+	}
+
+	for _, schedule := range []any{
+		map[string]any{"hour": "0"},
+		map[string]any{"minute": "0"},
+		map[string]any{"minute": "x", "hour": "0"},
+		map[string]any{"minute": "5-", "hour": "0"},
+		map[string]any{"minute": "*/0", "hour": "0"},
+		map[string]any{"minute": "99", "hour": "0"},
+		map[string]any{"minute": "0", "hour": "x"},
+		map[string]any{"minute": "0", "hour": "0", "dom": "x"},
+		map[string]any{"minute": "0", "hour": "0", "month": "x"},
+		map[string]any{"minute": "0", "hour": "0", "dow": "x"},
+		map[string]any{"minute": "0", "hour": "0", "begin": "24:00"},
+		map[string]any{"minute": "0", "hour": "0", "begin": "1"},
+		map[string]any{"minute": "0", "hour": "0", "begin": "aa:bb"},
+		map[string]any{"minute": "0", "hour": "0", "end": "24:00"},
+		map[string]any{"minute": "0", "hour": "0", "end": "1"},
+		map[string]any{"minute": "0", "hour": "0", "end": "aa:bb"},
+		"0 0 * * *",
+	} {
+		got, ok := scheduleIntervalMinutes(schedule)
+		if got != 0 || ok {
+			t.Errorf("scheduleIntervalMinutes(%v) = (%d, %v), want (0, false)", schedule, got, ok)
+		}
+	}
+
+	valid := []struct {
+		name     string
+		schedule any
+		want     int
+	}{
+		{"every 15 minutes", map[string]any{"minute": "*/15", "hour": "*"}, 15},
+		{"hourly overnight window gap", map[string]any{"minute": "0", "hour": "*", "begin": "08:00", "end": "17:00"}, 900},
+		{"dow seven", map[string]any{"minute": "0", "hour": "0", "dow": "7"}, 10080},
+		{"dow zero", map[string]any{"minute": "0", "hour": "0", "dow": "0"}, 10080},
+	}
+	for _, tc := range valid {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := scheduleIntervalMinutes(tc.schedule)
+			if !ok || got != tc.want {
+				t.Errorf("scheduleIntervalMinutes(%v) = (%d, %v), want (%d, true)", tc.schedule, got, ok, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadProtectionInputsErrors(t *testing.T) {
+	cases := []struct {
+		name      string
+		method    string
+		wantError string
+		wantCalls []string
+	}{
+		{"dataset transport", "pool.dataset.query", "pool.dataset.query: boom", []string{"pool.dataset.query"}},
+		{"task transport", "pool.snapshottask.query", "pool.snapshottask.query: boom", []string{"pool.dataset.query", "pool.snapshottask.query"}},
+		{"replication transport", "replication.query", "replication.query: boom", []string{"pool.dataset.query", "pool.snapshottask.query", "replication.query"}},
+		{"snapshot transport", "pool.snapshot.query", "snapshot.query: boom", []string{"pool.dataset.query", "pool.snapshottask.query", "replication.query", "pool.snapshot.query"}},
+		{"dataset invalid JSON", "pool.dataset.query", "parsing pool.dataset.query: unexpected end of JSON input", []string{"pool.dataset.query"}},
+		{"task invalid JSON", "pool.snapshottask.query", "parsing pool.snapshottask.query: unexpected end of JSON input", []string{"pool.dataset.query", "pool.snapshottask.query"}},
+		{"replication invalid JSON", "replication.query", "parsing replication.query: unexpected end of JSON input", []string{"pool.dataset.query", "pool.snapshottask.query", "replication.query"}},
+		{"snapshot invalid JSON", "pool.snapshot.query", "parsing snapshot.query: unexpected end of JSON input", []string{"pool.dataset.query", "pool.snapshottask.query", "replication.query", "pool.snapshot.query"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := []string{}
+			mock := &mockCaller{CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+				calls = append(calls, method)
+				if method == tc.method {
+					if strings.Contains(tc.name, "transport") {
+						return nil, errors.New("boom")
+					}
+					return json.RawMessage(`{`), nil
+				}
+				return json.RawMessage(`[]`), nil
+			}}
+
+			_, err := loadProtectionInputs(mock, nil)
+			if err == nil {
+				t.Fatal("loadProtectionInputs returned no error")
+			}
+			if got := err.Error(); got != tc.wantError {
+				t.Errorf("error = %q, want %q", got, tc.wantError)
+			}
+			if !reflect.DeepEqual(calls, tc.wantCalls) {
+				t.Errorf("calls = %v, want %v", calls, tc.wantCalls)
+			}
+		})
+	}
+}
