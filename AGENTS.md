@@ -69,11 +69,15 @@ when no test can catch it. The same PR appends 1 line to
 `.memory/corrections.jsonl` (`evidence`: the PR and the review;
 `promoted_to`: the test or the rule). See `.memory/README.md`.
 
-**Risk paths.** `.github/risk-paths.json` lists the high-risk paths; a PR that
-touches one gets `risk:high` from `.github/workflows/risk-paths.yml` and
-declares tier 3. Add a path when you add a file of that kind (signing, auth,
-publish, secrets, destructive operations, CI). Every non-test `server/*.go`
-file with a `DestructiveHint: new(true)` tool must match an entry:
+**Risk paths.** `.github/risk-paths.json` lists the high-risk paths. The list is
+schema version 2 with levels L1 to L4 (core ADR-0078, see
+[docs/org-adrs.md](docs/org-adrs.md)). The caller
+`.github/workflows/risk-paths.yml` calls core's `pr-triage.yml`. That workflow
+adds `level:L1` to `level:L4` and, for L1 and L2, `risk:high`. It also removes
+`ready-for-human` when the head moves after the label (core ADR-0077). A PR at
+L1 or L2, or with `risk:high`, declares tier 3. Add a path when you add a file
+of that kind (signing, auth, publish, secrets, destructive operations, CI).
+Every destructive tool file must be at L1:
 `test/risk-paths-coverage.test.mjs` fails otherwise.
 
 **Vendored files.** `scripts/lib/risk-paths.mjs` and
@@ -166,4 +170,5 @@ anchors valid) and add the back-links on the targets. Use relative paths.
 Bugs and feature requests live in GitHub Issues; a fix arrives as a pull
 request that closes its issue. Labels in use: `ready-for-human` (a PR that is
 reviewed, has green CI and is ready for the owner), `sweep` (a finding of the
-conformance sweep), `risk:high` (applied by the risk-paths workflow).
+conformance sweep), `level:L1` to `level:L4` (applied by the PR-triage
+workflow), `risk:high` (applied by the PR-triage workflow for L1 and L2).

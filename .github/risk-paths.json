@@ -1,88 +1,110 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "default_level": "L3",
   "paths": [
     {
       "glob": ".github/risk-paths.json",
+      "level": "L2",
       "why": "governance: the high-risk path list"
     },
     {
       "glob": ".github/workflows/**",
-      "why": "governance: CI, the risk-paths caller and token permissions"
+      "level": "L2",
+      "why": "governance: CI, the PR-triage caller and token permissions"
     },
     {
       "glob": "Makefile",
+      "level": "L2",
       "why": "governance: the verify gate"
     },
     {
       "glob": "scripts/check-template.mjs",
+      "level": "L2",
       "why": "governance: the template verification gate"
     },
     {
       "glob": "scripts/check-corrections.mjs",
+      "level": "L2",
       "why": "governance: the corrections validation gate"
     },
     {
       "glob": "scripts/lib/**",
+      "level": "L2",
       "why": "governance: the vendored risk-path validator and matcher"
     },
     {
       "glob": ".goreleaser.yaml",
+      "level": "L1",
       "why": "publication: the GoReleaser Pro config that builds, packages and publishes every release and the dev nightly"
     },
     {
       "glob": "mise.toml",
+      "level": "L1",
       "why": "update verification: the tool pins (golangci-lint, node) that mise installs locally and CI installs from"
     },
     {
       "glob": "mise.lock",
+      "level": "L1",
       "why": "update verification: the checksums behind the tool pins CI installs; a lock edit changes what the gates run"
     },
     {
       "glob": "truenas/client.go",
+      "level": "L1",
       "why": "auth: the API key login and TLS setting, and the no-replay rule that stops a lost write response from being sent twice"
     },
     {
       "glob": "server/server.go",
+      "level": "L1",
       "why": "destructive operations: the read-only gate that registers the 20 write tools only when writes are enabled"
     },
     {
       "glob": "cmd/serve.go",
+      "level": "L1",
       "why": "auth: the API key, --tls-insecure and --enable-writes flags and their environment variables"
     },
     {
       "glob": "server/tools_dataset.go",
+      "level": "L1",
       "why": "destructive operations: truenas_dataset_delete removes a dataset and its data"
     },
     {
       "glob": "server/tools_snapshot.go",
+      "level": "L1",
       "why": "destructive operations: truenas_snapshot_delete removes a snapshot"
     },
     {
       "glob": "server/tools_share.go",
+      "level": "L1",
       "why": "destructive operations: truenas_smb_delete and truenas_nfs_delete remove shares and cut off clients"
     },
     {
       "glob": "server/tools_app.go",
+      "level": "L1",
       "why": "destructive operations: truenas_app_delete, truenas_app_update and truenas_app_update_all can remove app data or need a manual host-path restore"
     },
     {
       "glob": "server/tools_app_configure.go",
+      "level": "L1",
       "why": "destructive operations: truenas_app_configure overwrites stored app config; TrueNAS keeps no prior copy"
     },
     {
       "glob": "server/tools_app_compose.go",
+      "level": "L1",
       "why": "destructive operations: truenas_app_compose_update replaces the stored compose whole; TrueNAS keeps no prior copy"
     },
     {
       "glob": "server/tools_data_protection.go",
+      "level": "L1",
       "why": "destructive operations: truenas_snapshot_task_create sets retention that can delete snapshots this task did not make"
     },
     {
       "glob": "server/tools_snapshot_task_run.go",
+      "level": "L1",
       "why": "destructive operations: truenas_snapshot_task_run starts retention, which can delete expired snapshots"
     },
     {
       "glob": "server/tools_replication_task.go",
+      "level": "L1",
       "why": "destructive operations: truenas_replication_task_create makes a task whose runs write into the target dataset and whose retention deletes target snapshots"
     }
   ]
