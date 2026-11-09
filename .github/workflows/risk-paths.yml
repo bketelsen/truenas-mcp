@@ -1,18 +1,21 @@
-# Risk paths (ADR-0068, docs/specs/risk-paths.md): this caller runs on
-# pull_request_target so the base risk list and trusted caller execute. It does
-# not run a PR branch. It checks out nothing. It is not a required check. The
-# repository must have the risk:high label, or this job fails.
-name: Risk paths caller
+# PR triage (ADR-0068, ADR-0077, ADR-0078, docs/specs/risk-paths.md): this
+# caller runs on pull_request_target so the base risk list and trusted caller
+# execute. It does not run a PR branch. It checks out nothing. It is not a
+# required check. It adds the level label level:L1 to level:L4 and, for L1 and
+# L2, the label risk:high. It removes ready-for-human when the head moves after
+# the label, or when CI is not green when the label comes. The repository must
+# have the risk:high label, or the levels step fails.
+name: PR triage
 
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened, edited, labeled]
 
 permissions: {}
 
 jobs:
-  risk-paths:
+  pr-triage:
     permissions:
       contents: read
       pull-requests: write
-    uses: frostyard/core/.github/workflows/risk-paths.yml@1b02a129026329cef2b46d1fbd0465a863c1cd81
+    uses: frostyard/core/.github/workflows/pr-triage.yml@c996ea3fb54bcf1a3c621113522213702a7673e2

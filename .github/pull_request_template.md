@@ -7,9 +7,11 @@ latest base branch. Reviews apply the repository's docs and PR rules. -->
 
 ## Risk tier
 
-Declare the highest applicable tier, never lower. A `risk:high` label (a path in `.github/risk-paths.json`) means tier 3. A project can replace this scale in an ADR.
+Declare the highest applicable tier, never lower. A `level:L1` or `level:L2`
+label, or a `risk:high` label (a path in `.github/risk-paths.json`), means
+tier 3. A project can replace this scale in an ADR.
 
-Scale: 1 low = docs, tests, comments; 2 medium = behaviour change in code; 3 high = security, data loss, releases or publishing, CI and permissions, or any `risk:high` label.
+Scale: 1 low = docs, tests, comments; 2 medium = behaviour change in code; 3 high = security, data loss, releases or publishing, CI and permissions, or any `level:L1`, `level:L2` or `risk:high` label.
 
 Risk tier: 1 — <!-- justification -->
 

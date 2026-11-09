@@ -78,6 +78,10 @@ function run(root) {
   });
 }
 
+function writeList(root, list) {
+  writeFileSync(join(root, ".github", "risk-paths.json"), JSON.stringify(list, null, 2) + "\n", "utf8");
+}
+
 function output(result) {
   return `${result.stdout || ""}\n${result.stderr || ""}`;
 }
@@ -238,6 +242,48 @@ test("risk-path list with no caller glob exits 1", (t) => {
     schema_version: 1,
     paths: [{ glob: ".github/risk-paths.json", why: "governance: list" }],
   }) + "\n", "utf8");
+  assertFailure(run(root), "risk-paths");
+});
+
+test("version 2 risk-path list with the list and caller at L2 exits 0", (t) => {
+  const root = fixture();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeList(root, {
+    schema_version: 2,
+    default_level: "L3",
+    paths: [
+      { glob: ".github/risk-paths.json", level: "L2", why: "governance: the high-risk path list" },
+      { glob: ".github/workflows/**", level: "L2", why: "governance: CI and the caller workflow" },
+    ],
+  });
+  assertClean(run(root));
+});
+
+test("version 2 caller glob at L3 exits 1", (t) => {
+  const root = fixture();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeList(root, {
+    schema_version: 2,
+    default_level: "L3",
+    paths: [
+      { glob: ".github/risk-paths.json", level: "L2", why: "governance: the high-risk path list" },
+      { glob: ".github/workflows/**", level: "L3", why: "governance: CI and the caller workflow" },
+    ],
+  });
+  assertFailure(run(root), "risk-paths");
+});
+
+test("version 2 risk-path list with a level outside L1 to L4 exits 1", (t) => {
+  const root = fixture();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeList(root, {
+    schema_version: 2,
+    default_level: "L3",
+    paths: [
+      { glob: ".github/risk-paths.json", level: "L2", why: "governance: the high-risk path list" },
+      { glob: ".github/workflows/**", level: "L5", why: "governance: CI and the caller workflow" },
+    ],
+  });
   assertFailure(run(root), "risk-paths");
 });
 
