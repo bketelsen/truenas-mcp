@@ -139,6 +139,20 @@ List periodic snapshot tasks.
 - Task fields: `id`, `dataset`, `recursive`, `exclude`, `enabled`, `naming_schema`, `allow_empty`, `schedule` (object passed through), `retention` = `{"value": lifetime_value, "unit": lifetime_unit}` (unit is HOUR/DAY/WEEK/MONTH/YEAR), `last_run`
 - The per-task projection is the `snapshotTaskSummary` helper in `tools_data_protection.go`. `truenas_snapshot_task_create` reports its created task through the same helper, so both tools always show the same fields.
 
+### `truenas_scrub_task_list`
+List scrub tasks and each Pool's last scan. Code: `server/tools_scrub.go`, registered by `registerScrubReadTools` in both modes.
+- Parameters:
+  - `pool` (string, optional) — exact Pool name; the Server filters tasks by `pool_name` and Pools by `name`. When neither matches, error `pool "<name>" not found`.
+- APIs, in order: `pool.scrub.query`, then `pool.query`, both with no parameters. Calls are never retried. Call and parse errors name the method.
+- Output: `{ "summary": {...}, "tasks": [...], "pools": [...], "notes": [...] }`. Tasks and Pools are sorted by numeric `id`; list fields are always arrays, never null.
+- Summary fields: `generated_at` (RFC 3339 UTC, from the injected `scrubNow` clock), `tasks_total`, `tasks_enabled`, `pools_total`, `pools_without_enabled_task`, `pools_past_threshold`, `pools_without_finished_scrub` (Pool name lists in Pool id order), `tasks_unknown_pool` (task ids in task id order). Counts and lists describe the filtered results.
+- Task fields (allow-list): `id`, `pool` (Pool id), `pool_name`, `threshold_days` (middleware `threshold`), `description`, `schedule` (`minute`, `hour`, `dom`, `month`, `dow` only), `enabled`, `pool_found`. `pool_found` checks the task's Pool id against all ids from `pool.query`; unknown ids enter `tasks_unknown_pool`.
+- Pool fields (allow-list): `id`, `name`, `scrub_task_ids` (all matching task ids, including disabled tasks), `last_scan` (null or `function`, `state`, `start_time`, `end_time`, `errors`), `days_since_last_scrub` (number or null), `past_threshold` (boolean). Datetimes use `wireDatetime`: `{"$date": <unix millis>}` becomes RFC 3339 UTC; null remains null.
+- `days_since_last_scrub` is the age in days, rounded to 1 decimal, only for a `SCRUB` scan in `FINISHED` state with a parseable `end_time`. Otherwise it is null and the Pool enters `pools_without_finished_scrub`.
+- `past_threshold` uses the unrounded age: it is true only with an enabled task and a finished scrub older than `(threshold - 1)` days. The smallest enabled threshold applies when multiple tasks refer to a Pool. Equality is not past threshold; missing finished scrub dates and disabled tasks cannot make it true.
+- Fixed notes explain that `last_scan` is the most recent scrub or resilver (a resilver hides the last scrub date), that the TrueNAS 27.0 threshold rule applies at the next scheduled run, and that schedules run in the Appliance's local time.
+- Annotations: title `List Scrub Tasks`, `readOnlyHint: true`, `openWorldHint: false`. Source verification and its live-call limits: [api-audit.md](api-audit.md). Context: [overview.md](../design/overview.md#tool-registration-pattern).
+
 ### `truenas_snapshot_task_create` **[write]**
 Create a periodic snapshot task: TrueNAS snapshots the dataset on the given cron schedule and deletes expired snapshots of the dataset by the retention lifetime. Retention selects snapshots by dataset and naming schema, not by the task that made them, so the tool is destructive.
 - Parameters:

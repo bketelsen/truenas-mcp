@@ -43,6 +43,7 @@ main.go                  Entry point — uses Charm fang CLI framework
     ├── tools_dataset.go  Dataset list/get/create/delete tools
     ├── tools_snapshot.go Snapshot list/get/create/delete tools
     ├── tools_data_protection.go  Periodic snapshot task and replication task list tools, plus the periodic snapshot task create tool (allow-listed summaries; no secrets)
+    ├── tools_scrub.go    Read-only scrub task and Pool scan report (allow-listed fields; threshold rule)
     ├── tools_snapshot_task_run.go  Periodic snapshot task run tool (dry run by default; pool.snapshottask.run once; state poll; snapshot verify)
     ├── tools_replication_task.go  Local replication task create tool (LOCAL PUSH only; plan checks a to f; dry run + plan hash guard; replication.create once)
     ├── tools_protection.go  Protection report: per-dataset snapshot task coverage, newest periodic snapshot age, replication, flags (read-only; size-capped)
@@ -106,7 +107,7 @@ Tools are split into read and write registration functions per domain. `server.N
 
 - `registerHealthReportTools`, `registerSystemTools`, `registerPoolTools`,
   `registerDatasetReadTools`, `registerSnapshotReadTools`,
-  `registerDataProtectionReadTools`, `registerProtectionReportTools`,
+  `registerDataProtectionReadTools`, `registerScrubReadTools`, `registerProtectionReportTools`,
   `registerShareReadTools`, `registerAlertReadTools`, `registerAppReadTools`,
   `registerJobReadTools`
 
@@ -121,6 +122,8 @@ and calls these only when `readOnly` is false:
 Report-style read tools are registered alongside the domain tools: `tools_reports.go` provides the aggregated health report plus job listing, and `tools_app.go` includes the read-only app update report as well as the app update write tools.
 
 `tools_filesystem.go` provides `truenas_filesystem_stat`, a read-only Tool that validates and cleans a path below `/mnt`, then joins `filesystem.stat` metadata with the simplified ACL type from `filesystem.getacl`. It rejects a path that resolves outside `/mnt` before it requests ACL data.
+
+`truenas_scrub_task_list` joins `pool.scrub.query` with `pool.query`, both without parameters, and filters an optional exact Pool name in the Server. It projects tasks and scans onto allow-listed fields, sorts by id, and reports enabled-task coverage, unknown Pool ids and finished scrub ages. It uses the smallest enabled task threshold and the TrueNAS 27.0 `threshold - 1` day rule, without rounding the comparison. A resilver or unfinished scan hides the last finished scrub date. See the [tool contract](../specs/tools.md#truenas_scrub_task_list) and [source audit](../specs/api-audit.md). The Server always registers 23 read-only Tools; write mode adds 20 Tools.
 
 Both app read reports are projections, not pass-throughs. `truenas_app_list` maps every `app.query` entry through `summarizeApp` (`server/tools_app.go`) onto `name`, `id`, `state`, `version`, `human_version`, `latest_version`, `latest_app_version`, `upgrade_available`, `image_updates_available`, `custom_app`, `migrated`, `action_required`, `portals`, plus `train` from `metadata.train` and `containers` (the container count) from `active_workloads.containers`; `notes`, `metadata`, `active_workloads` and `config` are dropped, and the entries are sorted by name under `summary.apps_total`. The raw payload was about 104,700 characters for 13 apps, and the Pi Pocket MCP client cuts a tool result at 40,000 characters (first and last 20,000 kept), so on 2026-11-02 only 7 of 13 apps reached the caller. `TestAppList_StaysUnderClientCutoff` in `tools_app_test.go` reproduces that size and pins the result under 40,000 characters. `truenas_app_get` remains the full-detail call for one app.
 

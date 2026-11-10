@@ -7,7 +7,7 @@ on the appliance. The decision and its reasons are in
 
 ## The rule
 
-- The server always registers the 22 read-only tools.
+- The server always registers the 23 read-only tools.
 - It registers the 20 write tools only when you start it with
   `--enable-writes` or with `TRUENAS_ENABLE_WRITES` set to a true value.
 - A write tool that is not registered does not exist for the client. It is

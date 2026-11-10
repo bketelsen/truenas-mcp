@@ -1,6 +1,6 @@
 # Tools
 
-truenas-mcp registers 42 tools. Every name starts with `truenas_`. The 22
+truenas-mcp registers 43 tools. Every name starts with `truenas_`. The 23
 read-only tools are always registered. The 20 tools marked **Write tool**
 exist only when the server runs with `--enable-writes` or
 `TRUENAS_ENABLE_WRITES=true` (see
@@ -129,6 +129,14 @@ Parameters: `name` *required*.
 Periodic snapshot tasks with schedule, retention and last run.
 
 Parameters: `dataset`.
+
+### `truenas_scrub_task_list`
+
+Scrub tasks with schedules, thresholds and enabled state, joined to each Pool's last scan. The summary lists Pools without an enabled task, past threshold,
+without a finished scrub, and task ids with an unknown Pool. A resilver hides
+the last scrub date. Schedules run in the Appliance's local time.
+
+Parameters: `pool` (exact Pool name).
 
 ### `truenas_snapshot_task_create`
 

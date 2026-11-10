@@ -131,6 +131,7 @@ Tools marked with `*` are excluded by default and are registered only with `--en
 | `truenas_dataset_delete` | Delete a dataset `*` |
 | `truenas_snapshot_list` | Snapshots for a dataset |
 | `truenas_snapshot_get` | Snapshot details |
+| `truenas_scrub_task_list` | Scrub tasks with schedules, thresholds and each Pool's last scan; optionally filter by Pool name |
 | `truenas_snapshot_task_list` | Periodic snapshot tasks with schedule, retention, and last run (optionally for one dataset) |
 | `truenas_snapshot_task_create` | Create a periodic snapshot task with a schedule, retention, and naming schema (refuses a duplicate; `dry_run` returns the payload) `*` |
 | `truenas_snapshot_task_run` | Run 1 periodic snapshot task now ("Run Now"). Dry run by default; `confirm: true` runs it once, waits for the run, and verifies the snapshot. Needs the `SNAPSHOT_TASK_WRITE` role `*` |

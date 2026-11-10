@@ -264,7 +264,7 @@ func TestDataProtectionToolsRegisteredReadOnly(t *testing.T) {
 	for _, name := range listTools(t, annotationsMock(), true) {
 		have[name] = true
 	}
-	for _, name := range []string{"truenas_snapshot_task_list", "truenas_replication_task_list"} {
+	for _, name := range []string{"truenas_snapshot_task_list", "truenas_replication_task_list", "truenas_scrub_task_list"} {
 		if !have[name] {
 			t.Errorf("%s not registered in read-only mode", name)
 		}
