@@ -22,8 +22,9 @@ func registerScrubReadTools(s *mcp.Server, client truenas.Caller) {
 		Name: "truenas_scrub_task_list",
 		Description: "List pool scrub tasks with pool, schedule, threshold (days), description, and enabled state, plus each " +
 			"pool's last scan (scrub or resilver) and the days since its last finished scrub. The summary lists pools " +
-			"without an enabled task, pools past threshold (the next scheduled run starts a scrub), pools without a " +
-			"finished scrub, and tasks whose pool is unknown. Optionally filter by pool name.",
+			"without an enabled task, pools past threshold (the last finished scrub is old enough for the next scheduled " +
+			"run to start a scrub), pools without a finished scrub, and tasks whose pool is unknown. Optionally filter " +
+			"by pool name.",
 		InputSchema: schema(map[string]any{"pool": stringProp("optional pool name; only tasks and pools with exactly this name are returned")}),
 		Annotations: &mcp.ToolAnnotations{Title: "List Scrub Tasks", ReadOnlyHint: true, OpenWorldHint: new(false)},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -140,6 +141,7 @@ func scrubReport(tasks, pools []map[string]any, poolIDs map[any]bool, now time.T
 		"notes": []string{
 			"last_scan is the most recent scrub or resilver, so a resilver hides the last scrub date.",
 			"past_threshold uses the TrueNAS 27.0 rule: the next scheduled run of the task starts a scrub when the last finished scrub ended more than threshold - 1 days ago.",
+			"For a pool without a finished scrub, TrueNAS reads the pool history instead: the next scheduled run starts a scrub unless a zpool create, import or scrub falls inside the threshold window. This tool cannot see that history, so such a pool is listed in pools_without_finished_scrub and never in pools_past_threshold.",
 			"Schedules run in the Appliance's local time.",
 		},
 	}

@@ -78,7 +78,7 @@ func TestScrubTaskList_Normal(t *testing.T) {
  {"id":9,"pool":2,"pool_name":"beta","threshold_days":35,"description":"monthly","enabled":false,"pool_found":true,"schedule":{"minute":"0","hour":"3","dom":"1","month":"*","dow":"*"}}],
  "pools":[{"id":1,"name":"alpha","scrub_task_ids":[1,3],"last_scan":{"function":"SCRUB","state":"FINISHED","start_time":"2026-10-15T03:00:00Z","end_time":"2026-10-15T04:00:00Z","errors":0},"days_since_last_scrub":36.3,"past_threshold":true},
  {"id":2,"name":"beta","scrub_task_ids":[9],"last_scan":null,"days_since_last_scrub":null,"past_threshold":false}],
- "notes":["last_scan is the most recent scrub or resilver, so a resilver hides the last scrub date.","past_threshold uses the TrueNAS 27.0 rule: the next scheduled run of the task starts a scrub when the last finished scrub ended more than threshold - 1 days ago.","Schedules run in the Appliance's local time."]}`
+ "notes":["last_scan is the most recent scrub or resilver, so a resilver hides the last scrub date.","past_threshold uses the TrueNAS 27.0 rule: the next scheduled run of the task starts a scrub when the last finished scrub ended more than threshold - 1 days ago.","For a pool without a finished scrub, TrueNAS reads the pool history instead: the next scheduled run starts a scrub unless a zpool create, import or scrub falls inside the threshold window. This tool cannot see that history, so such a pool is listed in pools_without_finished_scrub and never in pools_past_threshold.","Schedules run in the Appliance's local time."]}`
 	var want map[string]any
 	if err := json.Unmarshal([]byte(expected), &want); err != nil {
 		t.Fatal(err)
@@ -143,6 +143,25 @@ func TestScrubTaskList_PoolStates(t *testing.T) {
 				t.Fatal(p)
 			}
 		})
+	}
+}
+
+// A disabled task must not lower the threshold: only enabled tasks take part
+// in the smallest-threshold rule.
+func TestScrubTaskList_DisabledTaskThresholdIgnored(t *testing.T) {
+	now := fixedScrubClock(t)
+	tasks := []map[string]any{scrubFixtureTask(1, 1, "alpha", true, 50), scrubFixtureTask(2, 1, "alpha", false, 10)}
+	pools := []map[string]any{{"id": 1, "name": "alpha", "scan": scrubFixtureScan(now, 20*24*time.Hour)}}
+	got := callScrubFixture(t, tasks, pools, nil)
+	p := got["pools"].([]any)[0].(map[string]any)
+	if p["past_threshold"] != false || p["days_since_last_scrub"] != float64(20) {
+		t.Fatalf("pool = %v, want past_threshold false at 20 days", p)
+	}
+	if !reflect.DeepEqual(p["scrub_task_ids"], []any{float64(1), float64(2)}) {
+		t.Fatalf("scrub_task_ids = %v, want [1 2]", p["scrub_task_ids"])
+	}
+	if past := got["summary"].(map[string]any)["pools_past_threshold"]; !reflect.DeepEqual(past, []any{}) {
+		t.Fatalf("pools_past_threshold = %v, want []", past)
 	}
 }
 

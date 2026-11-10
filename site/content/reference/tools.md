@@ -132,9 +132,12 @@ Parameters: `dataset`.
 
 ### `truenas_scrub_task_list`
 
-Scrub tasks with schedules, thresholds and enabled state, joined to each Pool's last scan. The summary lists Pools without an enabled task, past threshold,
-without a finished scrub, and task ids with an unknown Pool. A resilver hides
-the last scrub date. Schedules run in the Appliance's local time.
+Scrub tasks with schedules, thresholds and enabled state, joined to each
+Pool's last scan. The summary lists Pools without an enabled task, Pools past
+threshold, Pools without a finished scrub, and task ids with an unknown Pool.
+A resilver hides the last scrub date. For a Pool without a finished scrub,
+TrueNAS decides from the pool history, which this tool cannot see. Schedules
+run in the Appliance's local time.
 
 Parameters: `pool` (exact Pool name).
 
