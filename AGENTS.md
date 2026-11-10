@@ -21,7 +21,7 @@ them rather than improvising, whichever agent you are:
 ## Code conventions (live — the code exists)
 
 - **Read-only by default.** `server.New(client, readOnly bool)` in
-  `server/server.go` always registers the 22 read-only tools and registers the
+  `server/server.go` always registers the 23 read-only tools and registers the
   20 write tools only inside `if !readOnly`. `NewServeCmd` in `cmd/serve.go`
   passes `!cfg.EnableWrites`, so write tools exist only with `--enable-writes`
   or `TRUENAS_ENABLE_WRITES=true` ([ADR-0004](docs/adr/0004-read-only-by-default.md)).

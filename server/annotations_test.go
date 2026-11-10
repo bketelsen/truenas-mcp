@@ -29,6 +29,7 @@ var wantToolHints = map[string]toolHints{
 	"truenas_dataset_get":           {readOnly: true},
 	"truenas_snapshot_list":         {readOnly: true},
 	"truenas_snapshot_get":          {readOnly: true},
+	"truenas_scrub_task_list":       {readOnly: true},
 	"truenas_snapshot_task_list":    {readOnly: true},
 	"truenas_replication_task_list": {readOnly: true},
 	"truenas_protection_report":     {readOnly: true},

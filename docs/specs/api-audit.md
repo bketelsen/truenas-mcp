@@ -30,7 +30,8 @@ one up in `core.get_methods` (keys are method names; each value has `accepts`, `
 | `core.ping` | client probe before every call | present | none | OK |
 | `system.info` | `truenas_system_info`, `truenas_health_report` | present | none | OK (live) |
 | `system.state` | `truenas_health_report` | present | none | OK (live) |
-| `pool.query` | `truenas_pool_list`, `truenas_pool_get`, `truenas_health_report` | present | filters `name =` | OK (live) |
+| `pool.query` | `truenas_pool_list`, `truenas_pool_get`, `truenas_health_report`, `truenas_scrub_task_list` | present | none, or filters `name =`; the scrub task list uses none | OK (live) |
+| `pool.scrub.query` | `truenas_scrub_task_list` | present | none | OK (middleware source TS-27.0.0-RC.1 `api/v27_0_0/pool_scrub.py` `PoolScrubEntry`, role `POOL_SCRUB_READ`; not called live) |
 | `disk.query` | `truenas_disk_list`, `truenas_health_report` | present | `options.extra.pools=true` | OK (live, PR #42) |
 | `interface.query` | `truenas_network_list` | present | none | OK (live) |
 | `filesystem.stat` | `truenas_filesystem_stat` | present | cleaned absolute path below `/mnt` | OK (live, 2026-11-06, READONLY_ADMIN) |
@@ -66,6 +67,8 @@ one up in `core.get_methods` (keys are method names; each value has `accepts`, `
 | `replication.create` | `truenas_replication_task_create` | present | 1 object: `name`, `direction` (`PUSH`), `transport` (`LOCAL`), `source_datasets`, `target_dataset`, `recursive`, `exclude`, `periodic_snapshot_tasks` (integers), `auto`, `retention_policy`, `lifetime_value` and `lifetime_unit` (only with `CUSTOM`), `readonly`, `enabled`, `allow_from_scratch`, `replicate`, `encryption` | OK (checked against the middleware source TS-27.0.0-RC.1 `api/v27_0_0/replication.py` `ReplicationCreate` and `plugins/replication.py`, and the `v25_10_0` model, not called live because it writes); role `REPLICATION_TASK_WRITE` |
 | `pool.dataset.query` (options) | `truenas_protection_report`, `truenas_replication_task_create` (lookup of the datasets the plan names) | present | `truenas_protection_report`: filters `[]` or `pool =`; options `select` [`id`,`name`,`type`,`pool`,`usedbydataset`], `extra` {`flat`: true, `properties`: [`usedbydataset`], `retrieve_user_props`: false}; `truenas_replication_task_create`: filter `id in`, options `select` [`id`,`name`], `extra` {`flat`: true, `retrieve_children`: false, `properties`: [], `retrieve_user_props`: false} | OK (live, read-only build, 2026-11-02; the `id in` lookup was checked against the middleware source, not called live) |
 | `docker.config` | `truenas_protection_report` (apps pool for the limits text; an error is ignored) | present | none | OK (live, read-only build, 2026-11-02) |
+
+The `pool.scrub.query` row was checked against middleware source TS-27.0.0-RC.1 (`api/v27_0_0/pool_scrub.py`, `plugins/pool_/scrub.py`, `plugins/zpool/scrub_impl.py`). The `pool.query` `scan` shape is `PoolScan`; its `{"$date": <unix millis>}` times were seen in live `pool.query` output. `pool.scrub.query` has not been called live; check it live before a release. The [tool contract](tools.md#truenas_scrub_task_list) records the TrueNAS 27.0 threshold rule.
 
 The 2 `filesystem.*` rows were added on 2026-11-06 for `truenas_filesystem_stat`, called live, read-only, on 27.0.0-RC.1 with a `READONLY_ADMIN` key, on `/mnt`. `filesystem.stat` accepts `..` paths (`/mnt/../etc` returned data), so `truenas_filesystem_stat` validates the path in the Server before it calls middleware, and refuses a `realpath` outside `/mnt`. `filesystem.stat` reports only `acl` (a boolean), not the ACL type, so the tool reads `acltype` and `trivial` from `filesystem.getacl`.
 
