@@ -22,6 +22,20 @@ func jsonValueResult(v any) (*mcp.CallToolResult, error) {
 	}, nil
 }
 
+// queryRows checks the result of one middleware query call and decodes its
+// rows. A call error becomes "<label>: <error>" and a decode error becomes
+// "parsing <label>: <error>", both wrapped.
+func queryRows(label string, raw json.RawMessage, err error) ([]map[string]any, error) {
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", label, err)
+	}
+	var rows []map[string]any
+	if err := json.Unmarshal(raw, &rows); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", label, err)
+	}
+	return rows, nil
+}
+
 // callSection calls one health report section and decodes its answer.
 func callSection(client truenas.Caller, method string, params ...interface{}) (any, error) {
 	result, err := client.Call(method, params...)

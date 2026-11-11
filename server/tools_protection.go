@@ -279,25 +279,25 @@ func loadProtectionInputs(client truenas.Caller, filters [][]any) (protectionInp
 	in := protectionInputs{}
 
 	raw, callErr := client.Call("pool.dataset.query", filters, protectionDatasetQueryOptions())
-	datasetRows, err := protectionQueryRows("pool.dataset.query", raw, callErr)
+	datasetRows, err := queryRows("pool.dataset.query", raw, callErr)
 	if err != nil {
 		return in, err
 	}
 
 	raw, callErr = client.Call("pool.snapshottask.query")
-	taskRows, err := protectionQueryRows("pool.snapshottask.query", raw, callErr)
+	taskRows, err := queryRows("pool.snapshottask.query", raw, callErr)
 	if err != nil {
 		return in, err
 	}
 
 	raw, callErr = client.Call("replication.query")
-	replicationRows, err := protectionQueryRows("replication.query", raw, callErr)
+	replicationRows, err := queryRows("replication.query", raw, callErr)
 	if err != nil {
 		return in, err
 	}
 
 	raw, callErr = callSnapshot(client, "query", filters, snapshotQueryOptions())
-	snapshotRows, err := protectionQueryRows("snapshot.query", raw, callErr)
+	snapshotRows, err := queryRows("snapshot.query", raw, callErr)
 	if err != nil {
 		return in, err
 	}
@@ -320,19 +320,6 @@ func loadProtectionInputs(client truenas.Caller, filters [][]any) (protectionInp
 	in.replications = protectionReplicationsFromRows(replicationRows)
 	in.snapshots = protectionSnapshotsFromRows(snapshotRows)
 	return in, nil
-}
-
-// protectionQueryRows runs the common call-result check and row decoding used
-// by the protection report's required middleware queries.
-func protectionQueryRows(label string, raw json.RawMessage, err error) ([]map[string]any, error) {
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", label, err)
-	}
-	var rows []map[string]any
-	if err := json.Unmarshal(raw, &rows); err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", label, err)
-	}
-	return rows, nil
 }
 
 // protectionPoolNamePattern is the shape of a pool name the limits text may

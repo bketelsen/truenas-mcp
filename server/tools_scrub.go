@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
 	"time"
@@ -28,21 +27,15 @@ func registerScrubReadTools(s *mcp.Server, client truenas.Caller) {
 		InputSchema: schema(map[string]any{"pool": stringProp("optional pool name; only tasks and pools with exactly this name are returned")}),
 		Annotations: &mcp.ToolAnnotations{Title: "List Scrub Tasks", ReadOnlyHint: true, OpenWorldHint: new(false)},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		raw, err := client.Call("pool.scrub.query")
+		raw, callErr := client.Call("pool.scrub.query")
+		tasks, err := queryRows("pool.scrub.query", raw, callErr)
 		if err != nil {
-			return nil, fmt.Errorf("pool.scrub.query: %w", err)
+			return nil, err
 		}
-		var tasks []map[string]any
-		if err := json.Unmarshal(raw, &tasks); err != nil {
-			return nil, fmt.Errorf("parsing pool.scrub.query: %w", err)
-		}
-		raw, err = client.Call("pool.query")
+		raw, callErr = client.Call("pool.query")
+		pools, err := queryRows("pool.query", raw, callErr)
 		if err != nil {
-			return nil, fmt.Errorf("pool.query: %w", err)
-		}
-		var pools []map[string]any
-		if err := json.Unmarshal(raw, &pools); err != nil {
-			return nil, fmt.Errorf("parsing pool.query: %w", err)
+			return nil, err
 		}
 		poolIDs := make(map[any]bool, len(pools))
 		for _, p := range pools {
