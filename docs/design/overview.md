@@ -49,7 +49,7 @@ main.go                  Entry point — uses Charm fang CLI framework
     ├── tools_protection.go  Protection report: per-dataset snapshot task coverage, newest periodic snapshot age, replication, flags (read-only; size-capped)
     ├── tools_share.go    SMB and NFS share tools
     ├── tools_alert.go    Alert list/dismiss tools
-    ├── tools_reports.go  Aggregated health report and job-list tools
+    ├── tools_reports.go  Aggregated health report and job-list tools + shared result helpers
     ├── tools_app.go      App list/get/config/start/stop/restart/update/delete tools + update report
     ├── tools_app_configure.go  App configuration write tool (deep-merge over app.config, then app.update)
     ├── tools_app_compose.go  Custom (compose) app write tool (validate YAML, dry-run diff + hash guard, app.update once, wait for the job)
@@ -197,6 +197,10 @@ Read-only mode is the default. The Server always registers 23 read-only Tools; w
 - `schema()`, `noArgs()` — build MCP input schema objects
 - `stringProp()`, `numberProp()`, `boolProp()`, `arrayProp()` — property builders
 - `jsonResult()` — wraps raw JSON as pretty-printed MCP text content
+
+`tools_reports.go` defines the shared result helpers that the tool files use:
+- `jsonValueResult()` — formats any value as pretty-printed MCP text content
+- `queryRows()` — checks one middleware query call and decodes its rows; a call error reads `<label>: <error>` and a decode error `parsing <label>: <error>`, both wrapped (used by the scrub and protection report tools)
 
 `server/params.go` defines typed accessors for MCP arguments:
 - `requireString()`, `optionalString()`

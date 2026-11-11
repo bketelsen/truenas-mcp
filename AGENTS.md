@@ -126,7 +126,9 @@ After a source change, update [docs/design/overview.md](docs/design/overview.md)
 [docs/specs/tools.md](docs/specs/tools.md), [README.md](README.md) and the
 affected user pages in `site/content/` (the docs site, `make site`), plus
 [docs/specs/api-audit.md](docs/specs/api-audit.md) when a middleware method or
-the payload it receives changes.
+the payload it receives changes. A pure refactor has no exception: when it
+adds, moves or renames a shared helper, the same PR updates the file map and
+the helper lists in `docs/design/overview.md` ("Schema and Parameter Helpers").
 
 **Site pages state checked facts only.** Each claim on a `site/content/`
 page comes from the code, a workflow or a doc at the PR head, with its scope
