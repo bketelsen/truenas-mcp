@@ -9,8 +9,7 @@ on:
     branches:
       - main
 
-permissions:
-  contents: write
+permissions: {}
 
 # Nightlies replace the same dev tag and release. Cancel stale runs before a
 # newer one publishes so concurrent GoReleaser uploads cannot collide.
@@ -22,6 +21,9 @@ jobs:
   snapshot:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # contents: write lets GoReleaser replace the dev tag and its pre-release.
+    permissions:
+      contents: write
     # Only run if the CI workflow succeeded
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:

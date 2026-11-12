@@ -292,13 +292,15 @@ GitHub Actions workflow `.github/workflows/ci.yml` (named `CI`) runs on push to 
 
 Go version is read from `go.mod` via `go-version-file`. The other tool pins are `golangci-lint` and `node` in `mise.toml`/`mise.lock`; the Makefile reads the lint pin so `make lint` and CI cannot drift, and `mise install` installs the pinned Node, while `make verify-template` accepts any Node.js 22 or later.
 
+`test/workflows.test.mjs` (run by `node --test test/*.test.mjs` in job `verify`) scans every workflow in `.github/workflows/`: `permissions: {}` at the top, a `permissions:` key on each job, and each external `uses:` pinned to a 40-character SHA with a trailing comment (`# vX.Y.Z` for an action) ([org ADR-0021](../org-adrs.md)).
+
 ## Release Pipeline
 
 Modeled on `frostyard/updex`. Three pieces:
 
 - **`Makefile`** — `make bump` runs build/test/fmt/lint, requires a clean tree, tags `$(svu next)` (semver derived from Conventional Commit messages since the last tag) and pushes the tag. `make snapshot` builds into `dist/` without publishing; `make release-check` validates the config. Both need `goreleaser-pro` on PATH.
 - **`.goreleaser.yaml`** — GoReleaser Pro (`pro: true`). Builds `CGO_ENABLED=0 -trimpath` binaries for linux/darwin/windows × amd64/arm64 with `-X truenas-mcp/version.*` ldflags. `before` hooks run `go mod tidy`, `scripts/completions.sh` (bash/zsh/fish via fang's `completion` command) and `scripts/manpages.sh` (fang's `man` command, gzipped). Produces tar.gz (zip on Windows) archives, `checksums.txt`, and deb/rpm/apk packages that install the binary, completions, and man page. Changelog is grouped by conventional-commit prefix. `nightly` publishes a single rolling `dev` pre-release (`{{ incmajor .Version }}-dev`).
-- **Workflows** — `release.yml` (`goreleaser`) runs on any tag push: GoReleaser Pro release, then `actions/attest-build-provenance` signs `checksums.txt` and every archive/package. `snapshot.yml` runs on `workflow_run` after a successful `CI` on `main` and does `goreleaser release --nightly --clean`; a `concurrency` group cancels stale nightlies. Both need the `GORELEASER_KEY` repository secret.
+- **Workflows** — `release.yml` (`goreleaser`) runs on any tag push: GoReleaser Pro release, then `actions/attest-build-provenance` signs `checksums.txt` and every archive/package. `snapshot.yml` runs on `workflow_run` after a successful `CI` on `main` and does `goreleaser release --nightly --clean`; a `concurrency` group cancels stale nightlies. Both need the `GORELEASER_KEY` repository secret. Both workflows set `permissions: {}` at the top; the `goreleaser` job grants `contents: write`, `id-token: write` and `attestations: write`, and the `snapshot` job grants only `contents: write`.
 
 Generated directories `build/`, `dist/`, `completions/`, `manpages/` are gitignored. `scripts/first-contact.sh` executes `build/truenas-mcp`.
 
