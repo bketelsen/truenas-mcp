@@ -292,7 +292,7 @@ GitHub Actions workflow `.github/workflows/ci.yml` (named `CI`) runs on push to 
 
 Go version is read from `go.mod` via `go-version-file`. The other tool pins are `golangci-lint` and `node` in `mise.toml`/`mise.lock`; the Makefile reads the lint pin so `make lint` and CI cannot drift, and `mise install` installs the pinned Node, while `make verify-template` accepts any Node.js 22 or later.
 
-`test/workflows.test.mjs` (run by `node --test test/*.test.mjs` in job `verify`) scans every workflow in `.github/workflows/`: `permissions: {}` at the top, a `permissions:` key on each job, and each external `uses:` pinned to a 40-character SHA with a trailing comment (`# vX.Y.Z` for an action) ([org ADR-0021](../org-adrs.md)).
+`test/workflows.test.mjs` (run by `node --test test/*.test.mjs` in job `verify`) scans every workflow in `.github/workflows/`: `permissions: {}` at the top, a `permissions:` key on each job, and each external `uses:` pinned to a 40-character SHA with a trailing comment (`# vX.Y.Z` for an action) ([org ADR-0021](../org-adrs.md)). A syntax the scan does not parse, such as a quoted or flow-style `uses` key, fails the test.
 
 ## Release Pipeline
 
