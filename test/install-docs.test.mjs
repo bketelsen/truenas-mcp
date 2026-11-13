@@ -1,8 +1,9 @@
 // Guard (PR #67 cross-review): `install SRC DIR/` does not create DIR, so an
 // install command in the README or on a site page that copies into a
 // directory must create that directory first, in the same code block, with
-// `mkdir -p DIR` or `install -d DIR`. Every line whose command is `install`
-// counts and is checked; a line it cannot parse fails. The scan reports how
+// `mkdir -p DIR` or `install -d DIR`. Every line that runs `install` or
+// `mkdir` in command position counts and must be 1 simple command in a small
+// grammar (unquoted words, no separators); a line outside it fails. The scan reports how
 // many install commands it checked, and it fails when it finds none, so a
 // change of the code-block syntax cannot make it pass on an empty list.
 import assert from "node:assert/strict";
@@ -13,44 +14,25 @@ import { fileURLToPath } from "node:url";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fence = /^\s*(```|~~~)/;
-// Any line whose command word is `install` (after an optional `sudo`) is an
-// install command; its arguments are parsed separately, so a comment, quotes
-// or `$HOME` cannot make the scan skip the line.
-const installLine = /^\s*(?:sudo\s+)?install(?:\s|$)/;
-const mkdirLine = /^\s*(?:sudo\s+)?mkdir(?:\s|$)/;
+// A line that runs `install` or `mkdir` in command position: at the start,
+// after `sudo`, or after a shell separator. Such a line must be 1 simple
+// command in the grammar below, or the scan reports it.
+const commandPosition = /(?:^|[;&|(]|\bsudo)\s*(?:install|mkdir)(?:\s|$)/;
+// The supported grammar: unquoted words, no separators, pipes, quotes,
+// substitutions or redirections, and an optional trailing `# comment`.
+const plainWord = /^[A-Za-z0-9_.\/~$+=,:@%{}*-]+$/;
 
-// words splits a shell line into words: it drops a trailing `# comment`, and
-// removes single and double quotes. It returns null for an unbalanced quote.
-function words(line) {
-  const out = [];
-  let cur = "";
-  let quote = "";
-  let inWord = false;
-  for (const ch of line) {
-    if (quote) {
-      if (ch === quote) quote = "";
-      else cur += ch;
-    } else if (ch === "'" || ch === '"') {
-      quote = ch;
-      inWord = true;
-    } else if (/\s/.test(ch)) {
-      if (inWord) out.push(cur);
-      cur = "";
-      inWord = false;
-    } else if (ch === "#" && !inWord) {
-      break;
-    } else {
-      cur += ch;
-      inWord = true;
-    }
-  }
-  if (quote) return null;
-  if (inWord) out.push(cur);
-  return out;
+// simpleCommand returns the words of 1 simple command, without a trailing
+// comment, or null when the line is outside the supported grammar.
+function simpleCommand(line) {
+  const body = line.replace(/\s+#.*$/, "").trim();
+  if (body === "") return null;
+  const out = body.split(/\s+/);
+  return out.every((w) => plainWord.test(w)) ? out : null;
 }
 
-// dirKey normalizes a directory: `$HOME` and `${HOME}` become `~`, and
-// trailing slashes go.
+// dirKey normalizes an unquoted directory: `$HOME` and `${HOME}` expand to
+// `~`, and trailing slashes go.
 function dirKey(dir) {
   return dir.replace(/^\$\{?HOME\}?(?=\/|$)/, "~").replace(/\/+$/, "") || "/";
 }
@@ -66,9 +48,12 @@ function markdownFiles(dir) {
 }
 
 // installProblems returns the install commands whose destination directory
-// no earlier `mkdir -p` or `install -d` in the same code block creates, and
-// the count of the install commands it checked. An install line that it
-// cannot parse is a problem too, never a skip.
+// no earlier `mkdir -p DIR` or `install -d DIR` in the same code block
+// creates, and the count of the install and mkdir commands it checked. A line
+// outside the supported grammar is a problem, never a skip:
+//   mkdir -p DIR...
+//   install [-m MODE] SRC... DIR/   or   install [-m MODE] SRC DIR/FILE
+//   install -d [-m MODE] DIR...
 export function installProblems(text) {
   const problems = [];
   let checked = 0;
@@ -80,33 +65,43 @@ export function installProblems(text) {
       made = new Set();
       continue;
     }
-    if (!inBlock) continue;
-    const where = `line ${i + 1}: ${line.trim()}`;
-    if (mkdirLine.test(line)) {
-      const w = words(line);
-      if (w && w.includes("-p")) {
-        for (const dir of w.filter((x) => !x.startsWith("-") && x !== "sudo" && x !== "mkdir")) made.add(dirKey(dir));
-      }
-      continue;
-    }
-    if (!installLine.test(line)) continue;
+    if (!inBlock || !commandPosition.test(line)) continue;
     checked++;
-    const w = words(line);
-    if (!w) {
-      problems.push(`${where} (cannot parse)`);
+    const where = `line ${i + 1}: ${line.trim()}`;
+    let w = simpleCommand(line);
+    if (w && w[0] === "sudo") w = w.slice(1);
+    if (!w || (w[0] !== "install" && w[0] !== "mkdir")) {
+      problems.push(`${where} (unsupported syntax)`);
       continue;
     }
-    const args = w.slice(w.indexOf("install") + 1);
-    if (args.includes("-d")) {
-      for (const dir of args.filter((x) => !x.startsWith("-") && !/^[0-7]{3,4}$/.test(x))) made.add(dirKey(dir));
+    let args = w.slice(1);
+    if (w[0] === "mkdir") {
+      if (args[0] !== "-p" || args.length < 2 || args.slice(1).some((a) => a.startsWith("-"))) {
+        problems.push(`${where} (unsupported mkdir form)`);
+        continue;
+      }
+      for (const dir of args.slice(1)) made.add(dirKey(dir));
       continue;
     }
-    const dest = args[args.length - 1];
-    if (!dest || dest.startsWith("-")) {
-      problems.push(`${where} (no destination)`);
+    let createDirs = false;
+    const operands = [];
+    for (let k = 0; k < args.length; k++) {
+      if (args[k] === "-m" && k + 1 < args.length) k++;
+      else if (args[k] === "-d") createDirs = true;
+      else if (args[k].startsWith("-")) operands.push(null);
+      else operands.push(args[k]);
+    }
+    if (operands.includes(null) || operands.length === 0 || (!createDirs && operands.length < 2)) {
+      problems.push(`${where} (unsupported install form)`);
       continue;
     }
-    const dir = dest.endsWith("/") ? dirKey(dest) : dirKey(dest.slice(0, Math.max(dest.lastIndexOf("/"), 0)) || ".");
+    if (createDirs) {
+      for (const dir of operands) made.add(dirKey(dir));
+      continue;
+    }
+    const dest = operands[operands.length - 1];
+    const slash = dest.lastIndexOf("/");
+    const dir = dest.endsWith("/") ? dirKey(dest) : slash > 0 ? dirKey(dest.slice(0, slash)) : slash === 0 ? "/" : ".";
     if (dir !== "." && !made.has(dir)) problems.push(where);
   }
   return { problems, checked };
@@ -117,33 +112,44 @@ test("installProblems flags an install into a directory that the block does not 
   assert.deepEqual(installProblems(bad).checked, 1);
   assert.equal(installProblems(bad).problems.length, 1);
   const good = "```sh\nmkdir -p ~/.local/bin\ninstall -m 0755 truenas-mcp ~/.local/bin/\n```\n";
-  assert.deepEqual(installProblems(good), { problems: [], checked: 1 });
+  assert.deepEqual(installProblems(good), { problems: [], checked: 2 });
   const otherBlock = "```sh\nmkdir -p ~/.local/bin\n```\n\n```sh\ninstall -m 0755 x ~/.local/bin/\n```\n";
   assert.equal(installProblems(otherBlock).problems.length, 1);
 });
 
-test("installProblems counts and checks an install line with a comment, quotes, $HOME or a file destination", () => {
-  // Each bad case sits beside a good, counted command, so a skipped line
-  // shows as a missing problem, not only as a lower count.
+test("installProblems checks every install line and refuses what it cannot read", () => {
+  // Each case sits beside a good block that counts 2 commands, so a skipped
+  // line shows as a missing problem, not only as a lower count.
   const good = "mkdir -p /opt/a\ninstall -m 0755 x /opt/a/\n";
-  const cases = [
+  const bad = [
     "install -m 0755 truenas-mcp ~/.local/bin/ # copy the binary",
-    'install -m 0755 truenas-mcp "$HOME/.local/bin/"',
-    "install -m 0755 truenas-mcp '${HOME}/.local/bin/'",
     "install -m 0755 truenas-mcp ~/.local/bin/truenas-mcp",
     "sudo install -m 0755 truenas-mcp /usr/local/libexec/",
+    'install -m 0755 truenas-mcp "$HOME/.local/bin/"',
+    'mkdir -p "~/.local/bin"',
+    "mkdir -p '${HOME}/.local/bin'",
+    "mkdir -p /tmp/work && echo ~/.local/bin",
+    "mkdir -p -m 0755 /tmp/work",
+    "echo ok; install -m 0755 x ~/.local/bin/",
+    "install -m 0755 x $(dirname ~/.local/bin/x)/",
+    "install --mode=0755 x ~/.local/bin/",
   ];
-  for (const bad of cases) {
-    const r = installProblems("```sh\n" + good + bad + "\n```\n");
-    assert.equal(r.checked, 2, bad);
-    assert.equal(r.problems.length, 1, bad);
+  for (const line of bad) {
+    const r = installProblems("```sh\n" + good + line + "\n```\n");
+    assert.equal(r.checked, 3, line);
+    assert.equal(r.problems.length, 1, line);
   }
-  const unparsable = installProblems('```sh\ninstall -m 0755 x "~/.local/bin/\n```\n');
-  assert.deepEqual(unparsable.problems.length, 1);
-  // [block, install commands in it]: `install -d` counts as an install command.
+  // A quoted or compound mkdir does not count as made: the install after it
+  // fails too.
+  for (const mk of ['mkdir -p "~/.local/bin"', "mkdir -p /tmp/work && echo ~/.local/bin"]) {
+    const r = installProblems("```sh\n" + mk + "\ninstall -m 0755 x ~/.local/bin/\n```\n");
+    assert.equal(r.problems.length, 2, mk);
+  }
+  // [block, commands in it]: these pass.
   const fixed = [
-    ['mkdir -p "$HOME/.local/bin"\ninstall -m 0755 truenas-mcp ~/.local/bin/ # copy', 1],
-    ["install -d ~/.local/bin\ninstall -m 0755 truenas-mcp ~/.local/bin/truenas-mcp", 2],
+    ["mkdir -p $HOME/.local/bin\ninstall -m 0755 truenas-mcp ~/.local/bin/ # copy", 2],
+    ["install -d -m 0755 ~/.local/bin\ninstall -m 0755 truenas-mcp ~/.local/bin/truenas-mcp", 2],
+    ["make install   # installs into $GOPATH/bin\nsudo apt install ./x.deb", 0],
   ];
   for (const [ok, checked] of fixed) {
     assert.deepEqual(installProblems("```sh\n" + ok + "\n```\n"), { problems: [], checked }, ok);
@@ -159,7 +165,7 @@ test("README and site pages create the directory before an install into it", (t)
     checked += result.checked;
     for (const p of result.problems) problems.push(`${relative(repo, file)} ${p}`);
   }
-  t.diagnostic(`checked ${checked} install commands in ${files.length} files`);
-  assert.ok(checked > 0, "no install command found: the scan is broken");
+  t.diagnostic(`checked ${checked} install and mkdir commands in ${files.length} files`);
+  assert.ok(checked > 0, "no install or mkdir command found: the scan is broken");
   assert.deepEqual(problems, []);
 });

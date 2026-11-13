@@ -296,7 +296,7 @@ Go version is read from `go.mod` via `go-version-file`. The other tool pins are 
 
 `test/workflows.test.mjs` (run by `node --test test/*.test.mjs` in job `verify`) scans every workflow in `.github/workflows/`: `permissions: {}` at the top, a `permissions:` key on each job, and each external `uses:` pinned to a 40-character SHA with a trailing comment (`# vX.Y.Z` for an action) ([org ADR-0021](../org-adrs.md)). A syntax the scan does not parse, such as a quoted or flow-style `uses` key, fails the test.
 
-`test/install-docs.test.mjs` (same run) scans the fenced code blocks of `README.md` and every page in `site/content/`: each line whose command is `install` needs a `mkdir -p DIR` or `install -d DIR` for its destination directory earlier in the same block, because `install` does not create the directory. It reads comments, quotes and `$HOME`, and a line it cannot parse fails, so no install line is skipped. It reports how many install commands it checked and fails when it finds none.
+`test/install-docs.test.mjs` (same run) scans the fenced code blocks of `README.md` and every page in `site/content/`: each `install` needs a `mkdir -p DIR` or `install -d DIR` for its destination directory earlier in the same block, because `install` does not create the directory. Every line that runs `install` or `mkdir` in command position must be 1 simple command in a small grammar (unquoted words, `-m MODE`, `-d`, `-p`, a trailing comment; no quotes, separators or substitutions), and a line outside it fails, so no such line is skipped or misread. It reports how many commands it checked and fails when it finds none.
 
 ## Release Pipeline
 
