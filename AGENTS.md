@@ -56,10 +56,12 @@ them rather than improvising, whichever agent you are:
   targets in the jobs of the same names: job `Lint` runs `make lint`, job
   `Verify` runs `make verify`, and job `Tests` runs `make test`, the unit tests
   under the race detector. `make ci` runs `verify` and adds the race tests and
-  the cross-builds, and with `BASE` set the append-only check of
-  `.memory/corrections.jsonl` against the PR base; run `make ci BASE=origin/main`
-  locally for the same check. The gate needs Node.js 22 or later, and
-  `mise install` gets the pinned Node and `golangci-lint`.
+  the cross-builds, and with `BASE` set the check of the corrections records
+  against the PR base: no record removed or renamed, only an empty
+  `promoted_to` filled, and the old corrections file does not come back. Run
+  `make ci BASE=origin/main` locally for the same check. The gate needs
+  Node.js 22 or later, and `mise install` gets the pinned Node and
+  `golangci-lint`.
 
 **Test reliability.** No sleeps for timing (wait on a condition or inject a
 clock). No network and no wall clock in unit tests (inject them). A flaky test
@@ -69,9 +71,9 @@ same PR. Never retry a job or a test until it is green.
 **Blocker to guard.** When a review (agent cross-review, owner review, or a
 human) finds a blocking point, the PR that fixes it also adds a guard: a
 targeted test that fails without the fix (preferred), or an `AGENTS.md` rule
-when no test can catch it. The same PR appends 1 line to
-`.memory/corrections.jsonl` (`evidence`: the PR and the review;
-`promoted_to`: the test or the rule). See `.memory/README.md`.
+when no test can catch it. The same PR adds 1 record file under
+`.memory/corrections/` (name `<date>-pr-<N>-<words>.json`; `evidence`: the PR
+and the review; `promoted_to`: the test or the rule). See `.memory/README.md`.
 
 **Risk paths.** `.github/risk-paths.json` lists the high-risk paths. The list is
 schema version 2 with levels L1 to L4 (core ADR-0078, see

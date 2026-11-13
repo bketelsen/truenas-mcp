@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-10",
+  "scope": "docs",
+  "correction": "A pure refactor that adds, moves or renames a shared helper still updates the file map and the helper lists in docs/design/overview.md in the same PR",
+  "evidence": "bketelsen/truenas-mcp#60, cross-review (openai/gpt-6.1-sol) of head 0104c19, finding 1",
+  "promoted_to": "AGENTS.md"
+}

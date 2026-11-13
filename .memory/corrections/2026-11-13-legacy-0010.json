@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-13",
+  "scope": "test",
+  "correction": "A docs scan of shell lines accepts only a small grammar of unquoted simple commands and reports every other line in command position, instead of stripping quotes or collecting operands from compound commands",
+  "evidence": "bketelsen/truenas-mcp#67, cross-review (openai/gpt-6.1-sol) of head d4991c2, findings 1 and 2",
+  "promoted_to": "test/install-docs.test.mjs"
+}

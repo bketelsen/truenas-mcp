@@ -46,12 +46,13 @@ make verify   # tidy diff, vet, gofmt, pinned golangci-lint, tests, template che
 
 `make verify` also runs the template gate (`scripts/check-template.mjs` and its
 Node test file): it checks the canonical `AGENTS.md` surfaces and symlinks, the
-`docs/README.md` index, `.github/risk-paths.json`, `.memory/corrections.jsonl`
+`docs/README.md` index, `.github/risk-paths.json`, the records in `.memory/corrections/`
 and the hash pins of the 2 files copied from frostyard/core. It needs Node.js 22
 or later; `mise install` provides the pinned release.
 
 `make ci` runs `make verify` and adds the race detector, the cross-builds and,
-with `BASE` set, the corrections append-only check. Each part runs as a job of
+with `BASE` set, the corrections check against the base (no record removed or
+renamed, only an empty `promoted_to` filled). Each part runs as a job of
 `ci.yml`: `Lint` (`make lint`), `Verify` (`make verify`), `Tests` (`make test`)
 and `Build`. `make help` lists every target.
 

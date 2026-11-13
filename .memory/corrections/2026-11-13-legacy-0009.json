@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-13",
+  "scope": "test",
+  "correction": "A docs scan matches a command by its command word and then parses the arguments (comments, quotes, $HOME); a line it cannot parse fails, and a fixture beside a counted good line shows that no line is skipped",
+  "evidence": "bketelsen/truenas-mcp#67, cross-review (openai/gpt-6.1-sol) of head c7a0e71, finding 1",
+  "promoted_to": "test/install-docs.test.mjs"
+}

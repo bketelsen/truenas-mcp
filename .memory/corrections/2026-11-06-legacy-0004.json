@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-06",
+  "scope": "server",
+  "correction": "An existence check through pool.dataset.query cannot prove a dataset is absent: the query hides internal datasets (boot pool, .system, ix-applications, ix-apps), so a tool that needs a new dataset must refuse those paths",
+  "evidence": "bketelsen/truenas-mcp#54, cross-review (openai/gpt-6.1-sol) of head a5763e9, finding 1",
+  "promoted_to": "server/tools_replication_task_test.go"
+}

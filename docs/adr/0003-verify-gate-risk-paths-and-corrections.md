@@ -62,3 +62,4 @@ file. A core update is a copy from the pinned core commit, not a manual edit.
 - Risk label rationale: [frostyard/core docs/adr/0068-label-pull-requests-that-touch-high-risk-paths.md](https://github.com/frostyard/core/blob/main/docs/adr/0068-label-pull-requests-that-touch-high-risk-paths.md)
 - Corrections surface rationale: [frostyard/core docs/adr/0018-org-wide-agent-instruction-and-knowledge-surfaces.md](https://github.com/frostyard/core/blob/main/docs/adr/0018-org-wide-agent-instruction-and-knowledge-surfaces.md)
 - Verify triad rationale: [frostyard/core docs/adr/0044-expose-the-make-gate-triad-in-every-repository.md](https://github.com/frostyard/core/blob/main/docs/adr/0044-expose-the-make-gate-triad-in-every-repository.md)
+- Amended in part by: [core ADR-0081](https://github.com/frostyard/core/blob/main/docs/adr/0081-store-each-correction-in-a-file-of-its-own.md)
