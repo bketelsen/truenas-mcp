@@ -165,6 +165,12 @@ Parameters: `id` *required*; `confirm`, `timeout_seconds`.
 
 The tool waits 120 seconds by default; `timeout_seconds` takes 10 to 600.
 
+The task's retention does not delete the snapshot of a run off the task's
+schedule. zettarepl deletes only the snapshots whose time matches the schedule
+of a periodic snapshot task on that dataset with that naming schema, so a
+snapshot from a run at 09:49 of a daily 00:00 task stays until someone deletes
+it. To get a snapshot that retention prunes, wait for the scheduled run.
+
 ### `truenas_replication_task_list`
 
 Replication tasks with source, target, schedule, retention and last run. Never returns encryption keys or SSH credential secrets. No parameters.
@@ -344,7 +350,7 @@ settings, or are hard to undo.
 | `truenas_app_update` | TrueNAS snapshots the host-path datasets, but an app rollback restores only the ix-volumes. See [app updates and recovery](../guides/app-updates.md). |
 | `truenas_app_update_all` | The same as `truenas_app_update`, for every app with an app update at once. |
 | `truenas_snapshot_task_create` | Retention selects snapshots by dataset and naming schema, not by the task that made them, so the new task can delete older snapshots whose names match. |
-| `truenas_snapshot_task_run` | A run does what a scheduled run does: retention can delete expired snapshots, and linked replication tasks start. The dry run lists those replication tasks. Needs the `SNAPSHOT_TASK_WRITE` role. |
+| `truenas_snapshot_task_run` | A run does what a scheduled run does: retention can delete expired snapshots, and linked replication tasks start. The dry run lists those replication tasks. The snapshot of a run off the task's schedule is never pruned by the task's retention. Needs the `SNAPSHOT_TASK_WRITE` role. |
 | `truenas_replication_task_create` | Every run of the new task writes into the target dataset, and retention can delete snapshots stored there: policy `SOURCE` deletes the target snapshots that the source does not have, and `CUSTOM` deletes them by age. Needs the `REPLICATION_TASK_WRITE` role. |
 
 `idempotentHint: true` marks the write tools where a repeat of the same call
