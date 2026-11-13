@@ -1,9 +1,11 @@
 // Guard (PR #67 cross-review): `install SRC DIR/` does not create DIR, so an
 // install command in the README or on a site page that copies into a
 // directory must create that directory first, in the same code block, with
-// `mkdir -p DIR` or `install -d DIR`. Every line that runs `install` or
-// `mkdir` in command position counts and must be 1 simple command in a small
-// grammar (unquoted words, no separators); a line outside it fails. The scan reports how
+// `mkdir -p DIR` or `install -d DIR`. Every line that holds the word
+// `install` or `mkdir` (outside a comment, and not a package manager's
+// `TOOL install`) counts and must be 1 simple command in a small grammar
+// (unquoted words, no separators, `sudo` the only prefix); any other line
+// fails. The scan reports how
 // many install commands it checked, and it fails when it finds none, so a
 // change of the code-block syntax cannot make it pass on an empty list.
 import assert from "node:assert/strict";
@@ -14,10 +16,14 @@ import { fileURLToPath } from "node:url";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fence = /^\s*(```|~~~)/;
-// A line that runs `install` or `mkdir` in command position: at the start,
-// after `sudo`, or after a shell separator. Such a line must be 1 simple
-// command in the grammar below, or the scan reports it.
-const commandPosition = /(?:^|[;&|(]|\bsudo)\s*(?:install|mkdir)(?:\s|$)/;
+// A candidate is any line that holds the word `install` or `mkdir` outside a
+// trailing comment, wherever it stands, so no prefix (`sudo -n`, `command`,
+// `FOO=bar`) can hide one. A candidate must be 1 simple command in the
+// grammar below, or the scan reports it.
+const candidate = /(?:^|[^A-Za-z0-9_-])(?:install|mkdir)(?:[^A-Za-z0-9_-]|$)/;
+// Package managers whose `install` subcommand is not install(1): a line
+// `TOOL install ...` (or `sudo TOOL install ...`) is not an install command.
+const packageTools = new Set(["make", "apt", "apt-get", "dnf", "yum", "zypper", "apk", "brew", "go", "pip", "pipx", "npm", "mise", "flatpak", "rpm-ostree"]);
 // The supported grammar: unquoted words, no separators, pipes, quotes,
 // substitutions or redirections, and an optional trailing `# comment`.
 const plainWord = /^[A-Za-z0-9_.\/~$+=,:@%{}*-]+$/;
@@ -65,13 +71,17 @@ export function installProblems(text) {
       made = new Set();
       continue;
     }
-    if (!inBlock || !commandPosition.test(line)) continue;
-    checked++;
+    if (!inBlock) continue;
+    const code = line.replace(/(?:^|\s)#.*$/, "");
+    if (!candidate.test(code)) continue;
     const where = `line ${i + 1}: ${line.trim()}`;
     let w = simpleCommand(line);
-    if (w && w[0] === "sudo") w = w.slice(1);
+    // `sudo` with no option of its own is the only allowed prefix.
+    if (w && w[0] === "sudo" && w.length > 1 && !w[1].startsWith("-")) w = w.slice(1);
+    if (w && w[1] === "install" && packageTools.has(w[0])) continue;
+    checked++;
     if (!w || (w[0] !== "install" && w[0] !== "mkdir")) {
-      problems.push(`${where} (unsupported syntax)`);
+      problems.push(`${where} (unsupported syntax or prefix)`);
       continue;
     }
     let args = w.slice(1);
@@ -133,6 +143,11 @@ test("installProblems checks every install line and refuses what it cannot read"
     "echo ok; install -m 0755 x ~/.local/bin/",
     "install -m 0755 x $(dirname ~/.local/bin/x)/",
     "install --mode=0755 x ~/.local/bin/",
+    "sudo -n install -m 0755 truenas-mcp ~/.local/bin/",
+    "command install -m 0755 truenas-mcp ~/.local/bin/",
+    "FOO=bar install -m 0755 truenas-mcp ~/.local/bin/",
+    "env mkdir -p ~/.local/bin",
+    "xargs install -m 0755 -t ~/.local/bin/",
   ];
   for (const line of bad) {
     const r = installProblems("```sh\n" + good + line + "\n```\n");
@@ -149,7 +164,7 @@ test("installProblems checks every install line and refuses what it cannot read"
   const fixed = [
     ["mkdir -p $HOME/.local/bin\ninstall -m 0755 truenas-mcp ~/.local/bin/ # copy", 2],
     ["install -d -m 0755 ~/.local/bin\ninstall -m 0755 truenas-mcp ~/.local/bin/truenas-mcp", 2],
-    ["make install   # installs into $GOPATH/bin\nsudo apt install ./x.deb", 0],
+    ["make install   # installs into $GOPATH/bin\nsudo apt install ./x.deb\n# install the binary", 0],
   ];
   for (const [ok, checked] of fixed) {
     assert.deepEqual(installProblems("```sh\n" + ok + "\n```\n"), { problems: [], checked }, ok);
