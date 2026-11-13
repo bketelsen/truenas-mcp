@@ -39,8 +39,11 @@ delete anything.
 ```sh
 gh release download --repo bketelsen/truenas-mcp --pattern 'truenas-mcp_*_linux_amd64.tar.gz'
 tar -xzf truenas-mcp_*_linux_amd64.tar.gz truenas-mcp
+mkdir -p ~/.local/bin
 install -m 0755 truenas-mcp ~/.local/bin/
 ```
+
+`~/.local/bin` must be on your `PATH` for the commands below.
 
 [Install](https://bketelsen.github.io/truenas-mcp/getting-started/install/) lists the
 `.deb`, `.rpm` and `.apk` packages, the macOS and Windows assets, the build

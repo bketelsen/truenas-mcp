@@ -33,8 +33,11 @@ The packages also install shell completions for bash, zsh and fish, and the
 
     ```sh
     tar -xzf truenas-mcp_*_linux_amd64.tar.gz truenas-mcp
+    mkdir -p ~/.local/bin
     install -m 0755 truenas-mcp ~/.local/bin/
     ```
+
+    `~/.local/bin` must be on your `PATH`.
 
 === "Debian or Ubuntu"
 
