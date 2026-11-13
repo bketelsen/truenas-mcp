@@ -28,10 +28,18 @@ const packageTools = new Set(["make", "apt", "apt-get", "dnf", "yum", "zypper", 
 // substitutions or redirections, and an optional trailing `# comment`.
 const plainWord = /^[A-Za-z0-9_.\/~$+=,:@%{}*-]+$/;
 
+// stripComment removes a trailing ` # comment` only when no quote, backslash
+// or backtick comes before it, so a `#` inside quotes never hides the rest of
+// the line; with a quote, the whole line stays and the grammar refuses it.
+function stripComment(line) {
+  const m = line.match(/^([^'"\\`]*?)\s#.*$/);
+  return m ? m[1] : line;
+}
+
 // simpleCommand returns the words of 1 simple command, without a trailing
 // comment, or null when the line is outside the supported grammar.
 function simpleCommand(line) {
-  const body = line.replace(/\s+#.*$/, "").trim();
+  const body = stripComment(line).trim();
   if (body === "") return null;
   const out = body.split(/\s+/);
   return out.every((w) => plainWord.test(w)) ? out : null;
@@ -72,8 +80,10 @@ export function installProblems(text) {
       continue;
     }
     if (!inBlock) continue;
-    const code = line.replace(/(?:^|\s)#.*$/, "");
-    if (!candidate.test(code)) continue;
+    // A whole-line comment is a comment; any other line keeps its text up to
+    // a real trailing comment.
+    if (line.trim().startsWith("#")) continue;
+    if (!candidate.test(stripComment(line))) continue;
     const where = `line ${i + 1}: ${line.trim()}`;
     let w = simpleCommand(line);
     // `sudo` with no option of its own is the only allowed prefix.
@@ -148,6 +158,8 @@ test("installProblems checks every install line and refuses what it cannot read"
     "FOO=bar install -m 0755 truenas-mcp ~/.local/bin/",
     "env mkdir -p ~/.local/bin",
     "xargs install -m 0755 -t ~/.local/bin/",
+    'echo " # preparation"; install -m 0755 x ~/.local/bin/',
+    "echo ' # x' && mkdir -p ~/.local/bin",
   ];
   for (const line of bad) {
     const r = installProblems("```sh\n" + good + line + "\n```\n");
