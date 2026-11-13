@@ -26,7 +26,9 @@ them rather than improvising, whichever agent you are:
   passes `!cfg.EnableWrites`, so write tools exist only with `--enable-writes`
   or `TRUENAS_ENABLE_WRITES=true` ([ADR-0004](docs/adr/0004-read-only-by-default.md)).
   A new write tool goes into that block, into `wantToolHints` in
-  `server/annotations_test.go`, and into the "Destructive tools" table of
+  `server/annotations_test.go`, into the class table of
+  [site/content/guides/enable-writes.md](site/content/guides/enable-writes.md),
+  and, when it is destructive, into the "Destructive tools" table of
   [site/content/reference/tools.md](site/content/reference/tools.md).
 - **Every tool name starts with `truenas_`** (`truenas_<domain>_<action>`).
 - **Use the glossary terms** from [docs/design/glossary.md](docs/design/glossary.md)
