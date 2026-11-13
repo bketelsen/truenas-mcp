@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-13",
+  "scope": "docs",
+  "correction": "A note that the snapshot of a run off the task schedule is never pruned must scope it to that task: another task on the same dataset with the same naming schema and a schedule that matches the snapshot time can still prune it",
+  "evidence": "bketelsen/truenas-mcp#71, cross-review (openai/gpt-6.1-sol) of head 75664db, finding 1",
+  "promoted_to": "server/tools_snapshot_task_run_test.go"
+}
