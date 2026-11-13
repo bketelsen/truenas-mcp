@@ -16,7 +16,7 @@ checks a pull request must pass.
 ```sh
 make            # format, vet and build into build/truenas-mcp
 make verify     # the gate without credentials: static checks, template checks and tests
-make ci         # the CI gate: verify-static, race tests and cross-builds
+make ci         # the CI gate: verify, race tests and cross-builds
 make help       # list every target
 ```
 

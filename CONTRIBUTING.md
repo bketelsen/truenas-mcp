@@ -50,8 +50,10 @@ Node test file): it checks the canonical `AGENTS.md` surfaces and symlinks, the
 and the hash pins of the 2 files copied from frostyard/core. It needs Node.js 22
 or later; `mise install` provides the pinned release.
 
-`make ci` runs the same gate plus the race detector, the cross-builds and, with
-`BASE` set, the corrections append-only check. `make help` lists every target.
+`make ci` runs `make verify` and adds the race detector, the cross-builds and,
+with `BASE` set, the corrections append-only check. Each part runs as a job of
+`ci.yml`: `Lint` (`make lint`), `Verify` (`make verify`), `Tests` (`make test`)
+and `Build`. `make help` lists every target.
 
 `make lint` refuses to run unless the installed `golangci-lint` matches the pin in `mise.toml`, so local results match CI. Bump the pin in `mise.toml` in its own commit and run `mise install` to refresh `mise.lock`.
 

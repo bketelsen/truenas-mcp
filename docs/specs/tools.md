@@ -12,8 +12,10 @@ Complete catalog of MCP tools exposed by truenas-mcp. Tools marked with **[write
 - Every tool name starts with `truenas_`. Read-only tools are registered by the
   `register*ReadTools` and `register*Tools` functions that `server.New`
   (`server/server.go`) always calls; write tools only by the `*WriteTools`,
-  `registerAppConfigureTools`, `registerAppComposeTools` and
-  `registerSnapshotTaskRunTool` functions it calls when `readOnly` is false.
+  `registerAppConfigureTools` and `registerAppComposeTools` functions it calls
+  when `readOnly` is false. `registerDataProtectionWriteTools`
+  (`server/tools_data_protection.go`) calls `registerSnapshotTaskRunTool` and
+  `registerReplicationTaskCreateTool` in turn.
 - Every tool sets `Annotations` with a non-empty `Title` and
   `OpenWorldHint: new(false)`.
 - Every destructive write sets `DestructiveHint` explicitly; the MCP default is

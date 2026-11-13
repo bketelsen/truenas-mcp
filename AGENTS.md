@@ -26,7 +26,10 @@ them rather than improvising, whichever agent you are:
   passes `!cfg.EnableWrites`, so write tools exist only with `--enable-writes`
   or `TRUENAS_ENABLE_WRITES=true` ([ADR-0004](docs/adr/0004-read-only-by-default.md)).
   A new write tool goes into that block, into `wantToolHints` in
-  `server/annotations_test.go`, and into the README's "Tool Annotations".
+  `server/annotations_test.go`, into the class table of
+  [site/content/guides/enable-writes.md](site/content/guides/enable-writes.md),
+  and, when it is destructive, into the "Destructive tools" table of
+  [site/content/reference/tools.md](site/content/reference/tools.md).
 - **Every tool name starts with `truenas_`** (`truenas_<domain>_<action>`).
 - **Use the glossary terms** from [docs/design/glossary.md](docs/design/glossary.md)
   (Server, Appliance, Tool, Report, Pool, Dataset, Snapshot, Share, App, Alert,
@@ -49,13 +52,14 @@ them rather than improvising, whichever agent you are:
   non-conforming subject breaks the release.
 - Run `make verify` before you call any change done: it runs `go mod tidy
   -diff`, `go vet`, `scripts/check-gofmt.sh` and its self-test, the pinned
-  `golangci-lint`, the template gate and the unit tests. CI runs the same
-  checks in job `verify` (the unit tests run in job `test`, with the race
-  detector). `make ci` adds the race tests and the cross-builds, and with
-  `BASE` set the append-only check of `.memory/corrections.jsonl` against the
-  PR base; run `make ci BASE=origin/main` locally for the same check. The gate
-  needs Node.js 22 or later, and `mise install` gets the pinned Node and
-  `golangci-lint`.
+  `golangci-lint`, the template gate and the unit tests. CI runs the make
+  targets in the jobs of the same names: job `Lint` runs `make lint`, job
+  `Verify` runs `make verify`, and job `Tests` runs `make test`, the unit tests
+  under the race detector. `make ci` runs `verify` and adds the race tests and
+  the cross-builds, and with `BASE` set the append-only check of
+  `.memory/corrections.jsonl` against the PR base; run `make ci BASE=origin/main`
+  locally for the same check. The gate needs Node.js 22 or later, and
+  `mise install` gets the pinned Node and `golangci-lint`.
 
 **Test reliability.** No sleeps for timing (wait on a condition or inject a
 clock). No network and no wall clock in unit tests (inject them). A flaky test
@@ -123,8 +127,8 @@ category's `TEMPLATE.md`** and follows its structure:
 - `docs/plans/` — order of work. Phases with "Done when" outcomes.
 
 After a source change, update [docs/design/overview.md](docs/design/overview.md),
-[docs/specs/tools.md](docs/specs/tools.md), [README.md](README.md) and the
-affected user pages in `site/content/` (the docs site, `make site`), plus
+[docs/specs/tools.md](docs/specs/tools.md) and the affected user pages in
+`site/content/` (the docs site, `make site`), plus
 [docs/specs/api-audit.md](docs/specs/api-audit.md) when a middleware method or
 the payload it receives changes. A pure refactor has no exception: when it
 adds, moves or renames a shared helper, the same PR updates the file map and

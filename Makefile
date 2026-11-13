@@ -99,7 +99,7 @@ tidy:
 ## check: Developer gate: fmt, then the verify gate's static checks (lint and template included), then race tests
 check: fmt verify-static test
 
-## verify-static: The non-mutating static checks shared by verify and ci (tidy diff, vet, gofmt -l, exact-pin lint)
+## verify-static: The non-mutating static checks inside verify (tidy diff, vet, gofmt -l, exact-pin lint, template gate)
 verify-static:
 	@echo "==> verify: go.mod is tidy"
 	$(GO) mod tidy -diff
@@ -131,8 +131,8 @@ verify: verify-static
 test-scripts:
 	./scripts/check-gofmt_test.sh
 
-## ci: Run the credential-free CI gate (verify-static, then race tests and cross-build)
-ci: verify-static
+## ci: Run the credential-free CI gate (the verify target, then race tests, cross-builds and the corrections check with BASE)
+ci: verify
 	@if [ -n "$(BASE)" ]; then node scripts/check-corrections.mjs --base "$(BASE)"; fi
 	@echo "==> race detector"
 	$(GO) test -race -count=1 ./...

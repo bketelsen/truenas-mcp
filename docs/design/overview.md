@@ -147,7 +147,7 @@ Every tool also sets `Annotations: &mcp.ToolAnnotations{...}` (go-sdk v1.4.0 fie
 - `IdempotentHint: true` only when a repeat call with the same arguments has no further effect on the appliance.
 - Non-obvious classifications carry a trailing one-line comment explaining why (e.g. app updates stay destructive even though `upgradeApp` sends `snapshot_hostpaths: true`, because `app.rollback` restores only the ix-volumes snapshot and host-path snapshots need a manual ZFS rollback; `truenas_app_start` is not idempotent because `app.start` always runs `compose up --force-recreate`).
 
-Clients such as agent harnesses use these hints to decide what needs human confirmation (run read-only tools freely, always confirm destructive ones). A new tool must be added to `wantToolHints` in `server/annotations_test.go` and to the README's "Tool Annotations" section, or the tests fail.
+Clients such as agent harnesses use these hints to decide what needs human confirmation (run read-only tools freely, always confirm destructive ones). A new tool must be added to `wantToolHints` in `server/annotations_test.go`, or the tests fail. A new write tool also goes into the class table of `site/content/guides/enable-writes.md`, and a destructive one into the "Destructive tools" table of `site/content/reference/tools.md`.
 
 ### App Upgrade Snapshots
 
@@ -160,7 +160,7 @@ Clients such as agent harnesses use these hints to decide what needs human confi
 - ix-volumes are snapshotted separately and unconditionally: `<ix-volumes ds>@<old version>`, recursive, replacing any existing one.
 - `app.rollback` (`plugins/apps/rollback.py`) rolls back only `<ix-volumes ds>@<version>` (when `rollback_snapshot` is true). It never touches `ix-app-upgrade-*` snapshots, and nothing in the middleware deletes them.
 
-That last point is why both update tools keep `DestructiveHint: true`. Host-path data is now recoverable, but only by a manual `zfs rollback` of the whole dataset, which also reverts other apps that share the dataset and destroys newer snapshots. The README's "App updates and recovery" section is the user-facing version of this. Do not mark the update tools non-destructive unless the server also gains a tool that restores the host-path snapshots, or TrueNAS's rollback starts doing it.
+That last point is why both update tools keep `DestructiveHint: true`. Host-path data is now recoverable, but only by a manual `zfs rollback` of the whole dataset, which also reverts other apps that share the dataset and destroys newer snapshots. The site page [App updates and recovery](../../site/content/guides/app-updates.md) is the user-facing version of this. Do not mark the update tools non-destructive unless the server also gains a tool that restores the host-path snapshots, or TrueNAS's rollback starts doing it.
 
 ### Custom App Compose Updates
 
@@ -201,12 +201,14 @@ Read-only mode is the default. The Server always registers 23 read-only Tools; w
 `tools_reports.go` defines the shared result helpers that the tool files use:
 - `jsonValueResult()` — formats any value as pretty-printed MCP text content
 - `queryRows()` — checks one middleware query call and decodes its rows; a call error reads `<label>: <error>` and a decode error `parsing <label>: <error>`, both wrapped (used by the scrub and protection report tools)
+- `callSection()` — calls one middleware method and decodes its answer into `any`, with the error returned unwrapped (used by `truenas_health_report` for each of its sections)
 
 `server/params.go` defines typed accessors for MCP arguments:
 - `requireString()`, `optionalString()`
 - `requireFloat64()`, `optionalFloat64()`
 - `optionalBool()`, `optionalSlice()`
 - `strictBool()`, `strictStringList()` — for tools that must refuse a present argument of the wrong type
+- `requireObject()` — returns a required JSON object argument as `map[string]any`, or an error when it is absent or not an object (used by `tools_app_configure.go` and `tools_data_protection.go`)
 
 `optionalBool()` returns false for an absent key, and both `optionalBool()` and `optionalSlice()` drop a value of the wrong type silently. The SDK does not validate arguments against `InputSchema`, so a new write tool should use `strictBool()` and `strictStringList()` for any argument whose default would change the effect of the call (`truenas_snapshot_task_create` needs this for `dry_run`, `enabled`, `allow_empty`, `recursive`, and `exclude`). A JSON `null` counts as absent in both helpers.
 
@@ -284,8 +286,8 @@ GitHub Actions workflow `.github/workflows/ci.yml` (named `CI`) runs on push to 
 
 | Job | What it does |
 |-----|-------------|
-| `lint` | Installs the `golangci-lint` pinned in `mise.toml`/`mise.lock` via `jdx/mise-action`, runs `make lint-version-check`, then `golangci-lint run` |
-| `verify` | `go mod tidy -diff`, `go vet`, `scripts/check-gofmt.sh` (fails on a gofmt error or an empty file list) and `scripts/check-gofmt_test.sh`; then `node scripts/check-template.mjs` and `node --test test/*.test.mjs` on the Node release `mise.toml` pins, and `scripts/check-corrections.mjs --base <PR base>` (checkout with `fetch-depth: 0`) |
+| `lint` | Installs the `golangci-lint` pinned in `mise.toml`/`mise.lock` via `jdx/mise-action`, then runs `make lint` (the pin guard `make lint-version-check`, then `golangci-lint run`) |
+| `verify` | Installs the pinned `node` and `golangci-lint` via `jdx/mise-action`, runs `make verify` (`go mod tidy -diff`, `go vet`, `scripts/check-gofmt.sh` (fails on a gofmt error or an empty file list) and `scripts/check-gofmt_test.sh`, the pinned `golangci-lint`, `node scripts/check-template.mjs` and `node --test test/*.test.mjs`, then the unit tests), then `scripts/check-corrections.mjs --base <PR base>` (checkout with `fetch-depth: 0`), the same command as the first line of the `ci` recipe |
 | `test` | `make test` (`-race -count=1`) |
 | `build` | `make build` matrix: linux/amd64, linux/arm64, darwin/arm64, windows/amd64 |
 | `release-config` | `goreleaser check` with the Pro distribution; fails on trusted runs if `GORELEASER_KEY` is missing, warns on fork PRs |
@@ -293,6 +295,8 @@ GitHub Actions workflow `.github/workflows/ci.yml` (named `CI`) runs on push to 
 Go version is read from `go.mod` via `go-version-file`. The other tool pins are `golangci-lint` and `node` in `mise.toml`/`mise.lock`; the Makefile reads the lint pin so `make lint` and CI cannot drift, and `mise install` installs the pinned Node, while `make verify-template` accepts any Node.js 22 or later.
 
 `test/workflows.test.mjs` (run by `node --test test/*.test.mjs` in job `verify`) scans every workflow in `.github/workflows/`: `permissions: {}` at the top, a `permissions:` key on each job, and each external `uses:` pinned to a 40-character SHA with a trailing comment (`# vX.Y.Z` for an action) ([org ADR-0021](../org-adrs.md)). A syntax the scan does not parse, such as a quoted or flow-style `uses` key, fails the test.
+
+`test/install-docs.test.mjs` (same run) scans the fenced code blocks of `README.md` and every page in `site/content/`: each `install` needs a `mkdir -p DIR` or `install -d DIR` for its destination directory earlier in the same block, because `install` does not create the directory. Every line that holds the word `install` or `mkdir` outside a comment (a whole-line comment, or a trailing ` # ...` with no quote before it), except a package manager's `TOOL install` (`make`, `apt`, `dnf`, `go` and the like), must be 1 simple command in a small grammar (unquoted words, `sudo` with no option as the only prefix, `-m MODE`, `-d`, `-p`, a trailing comment; no quotes, separators or substitutions), and any other such line fails. It reports how many commands it checked and fails when it finds none.
 
 ## Release Pipeline
 
@@ -314,7 +318,7 @@ User documentation is a ProperDocs + MaterialX site in `site/`, from frostyard/c
 - `make site` installs the lock into `build/site-venv` with `pip install --require-hashes` and runs `properdocs build --strict`, so a broken relative link or anchor fails. `make site-serve` previews it at `http://127.0.0.1:8000/truenas-mcp/`. `make ci` does not build the site.
 - `.github/workflows/site.yml` (named `Site`) runs `make site` on a pull request that touches `site/**`, the `Makefile` or itself, and on `main` it uploads `site/dist` and deploys it with `actions/deploy-pages`. Actions are SHA-pinned, `permissions: {}` at the top, `contents: read` for the build job and `pages: write` plus `id-token: write` only for the deploy job. The repository's Pages source must be GitHub Actions.
 
-A change to user-visible behavior (a tool, a flag, a variable) updates the matching page in `site/content/` in the same pull request, beside [specs/tools.md](../specs/tools.md) and the README.
+A change to user-visible behavior (a tool, a flag, a variable) updates the matching page in `site/content/` in the same pull request, beside [specs/tools.md](../specs/tools.md), and the README when its short summary no longer holds.
 
 ## MCP Tools Reference
 
@@ -333,7 +337,7 @@ make lint         # pinned golangci-lint (refuses a mismatched version)
 make verify       # static checks, template checks + tests (credential-free gate)
 make verify-template  # template gate alone (needs Node.js 22 or later)
 make test-scripts # run the gofmt check self-test
-make ci           # verify-static + race tests + cross-builds (+ corrections against BASE)
+make ci           # verify + race tests + cross-builds (+ corrections against BASE)
 make site         # docs site, strict build into site/dist (needs Python 3)
 make site-serve   # preview the docs site at http://127.0.0.1:8000/truenas-mcp/
 make help         # list all targets
