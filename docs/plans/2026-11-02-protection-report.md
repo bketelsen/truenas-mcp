@@ -1,5 +1,10 @@
 # `truenas_protection_report` — design
 
+**Status:** Done (2026-11-03, recorded 2026-11-13). [#49](https://github.com/bketelsen/truenas-mcp/pull/49)
+(merge commit [`326049e`](https://github.com/bketelsen/truenas-mcp/commit/326049e42bcc9f568bdaaa0a448f9eae60660584))
+added `truenas_protection_report` in `server/tools_protection.go`, registered in `server/server.go`, with
+tests in `server/tools_protection_test.go`.
+
 Goal: 1 read-only call answers "is this data protected?" for every dataset. Today an agent joins
 `truenas_dataset_list`, `truenas_snapshot_task_list`, `truenas_replication_task_list` and
 `truenas_snapshot_list` by hand (homewiki `docs/backups.md`, "Coverage").
