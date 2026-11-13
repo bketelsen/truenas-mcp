@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-05",
+  "scope": "docs-site",
+  "correction": "A site page claim keeps the scope of its source: dev pre-release assets have no provenance attestation, truenas_app_update and truenas_app_update_all act only on upgrade_available, and the 2026-10-22 audit date does not cover methods checked later",
+  "evidence": "bketelsen/truenas-mcp#53, cross-review (openai/gpt-6.1-sol) of head b656832, findings 1-3",
+  "promoted_to": "AGENTS.md"
+}

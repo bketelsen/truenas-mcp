@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-13",
+  "scope": "test",
+  "correction": "A docs scan finds candidate lines by the bare word anywhere outside a comment, before it checks the grammar, so a prefix such as sudo -n, command or VAR=x cannot hide a line; only named exceptions are skipped",
+  "evidence": "bketelsen/truenas-mcp#67, cross-review (openai/gpt-6.1-sol) of head c1d38db, finding 1",
+  "promoted_to": "test/install-docs.test.mjs"
+}

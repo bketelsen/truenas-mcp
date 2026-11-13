@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-05",
+  "scope": "docs",
+  "correction": "A doc that links to another doc needs the reverse link on the target in the same PR; a plan path named only as code text is not a link",
+  "evidence": "bketelsen/truenas-mcp#52, cross-review (openai/gpt-6.1-sol) of head 74e68fb, finding 2",
+  "promoted_to": "AGENTS.md"
+}

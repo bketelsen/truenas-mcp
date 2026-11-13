@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-13",
+  "scope": "test",
+  "correction": "A docs scan strips a trailing shell comment only when no quote, backslash or backtick comes before the #, so a # inside quotes cannot hide a later command from detection",
+  "evidence": "bketelsen/truenas-mcp#67, cross-review (openai/gpt-6.1-sol) of head 96a0f4f, finding 1",
+  "promoted_to": "test/install-docs.test.mjs"
+}

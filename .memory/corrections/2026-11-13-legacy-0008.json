@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-13",
+  "scope": "docs",
+  "correction": "An install command in the README or on a site page that copies into a directory creates that directory first in the same code block (mkdir -p), and says it must be on PATH",
+  "evidence": "bketelsen/truenas-mcp#67, cross-review (openai/gpt-6.1-sol) of head 88daada, finding 1",
+  "promoted_to": "test/install-docs.test.mjs"
+}

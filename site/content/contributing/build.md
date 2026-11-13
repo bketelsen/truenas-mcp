@@ -22,7 +22,8 @@ make help       # list every target
 
 `make build` stamps the binary with the git tag, the commit and the build time.
 Run `make verify` before you call a change done. `make ci BASE=origin/main`
-also checks that `.memory/corrections.jsonl` is append-only against the base.
+also checks the records in `.memory/corrections/` against the base: no record
+is removed or renamed, and only an empty `promoted_to` may be filled.
 
 The unit tests use an in-memory MCP client and a mock of the appliance. No test
 talks to a real appliance.

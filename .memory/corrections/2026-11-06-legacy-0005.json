@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-06",
+  "scope": "server",
+  "correction": "A plan hash that guards a write must cover every configuration field the dry run shows, such as the schedule and allow_empty of a bound snapshot task; only run state is left out",
+  "evidence": "bketelsen/truenas-mcp#54, cross-review (openai/gpt-6.1-sol) of head a5763e9, finding 2",
+  "promoted_to": "server/tools_replication_task_test.go"
+}
