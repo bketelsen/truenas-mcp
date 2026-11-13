@@ -7,8 +7,9 @@ import (
 
 // toolHints is the expected safety classification of one tool. It repeats the
 // Annotations in tools_*.go on purpose: adding a tool, or reclassifying one,
-// means editing both places, and the README's "Tool Annotations" section with
-// them. destructive and idempotent apply to write tools only.
+// means editing both places, and the "Destructive tools" table of
+// site/content/reference/tools.md with them. destructive and idempotent apply
+// to write tools only.
 type toolHints struct {
 	readOnly    bool
 	destructive bool
@@ -153,7 +154,7 @@ func TestToolAnnotations_Classification(t *testing.T) {
 		t.Run(tool.Name, func(t *testing.T) {
 			want, ok := wantToolHints[tool.Name]
 			if !ok {
-				t.Fatal("no entry in wantToolHints; classify the tool there and in the README's Tool Annotations section")
+				t.Fatal("no entry in wantToolHints; classify the tool there and in the \"Destructive tools\" table of site/content/reference/tools.md")
 			}
 			if !want.readOnly && !isWriteToolName[tool.Name] {
 				t.Error("write tool missing from writeToolNames in mock_test.go")

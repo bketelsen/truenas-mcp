@@ -1,217 +1,96 @@
+<!-- readme-kind: tool -->
 # truenas-mcp
 
-MCP server that exposes TrueNAS SCALE management capabilities to AI assistants like Claude.
+[![CI](https://github.com/bketelsen/truenas-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/bketelsen/truenas-mcp/actions/workflows/ci.yml)
 
-Documentation: <https://bketelsen.github.io/truenas-mcp/>
+**Give an AI client careful access to your TrueNAS SCALE appliance.**
 
-Connects to TrueNAS SCALE (Goldeye+) via the WebSocket JSON-RPC API and exposes storage, sharing, system, and app management as MCP tools over stdio.
+truenas-mcp is an MCP server for people who run TrueNAS SCALE and want their
+AI assistant to work with the appliance: storage, sharing, system and app
+management, as tools over stdio. It starts read-only. The 20 tools that change
+the appliance exist only with `--enable-writes` or
+`TRUENAS_ENABLE_WRITES=true`, so a plain `serve` cannot create, change or
+delete anything.
 
-## Requirements
+**Status:** pre-release. The appliance must run TrueNAS SCALE Goldeye (25.10) or later.
 
-- Go 1.26+
-- TrueNAS SCALE Goldeye (25.10) or later
-- A TrueNAS API key (create in TrueNAS UI → Settings → API Keys)
+**Documentation:** [bketelsen.github.io/truenas-mcp](https://bketelsen.github.io/truenas-mcp/)
+
+## What it does
+
+- **Read-only by default.** The default mode registers the 23 read-only tools
+  only. A write tool that is not registered does not exist for the client, so
+  it cannot be called by mistake. [Read-only by default](https://bketelsen.github.io/truenas-mcp/concepts/read-only/)
+- **One view of the appliance.** Pools, datasets, snapshots, shares, alerts,
+  apps and jobs, with the parameters and the safety class of every tool on 1
+  page. [Tools](https://bketelsen.github.io/truenas-mcp/reference/tools/)
+- **Reports that combine queries.** `truenas_health_report` answers with
+  system, pool, disk and alert state; `truenas_protection_report` names each
+  dataset that no snapshot task covers. [Tools](https://bketelsen.github.io/truenas-mcp/reference/tools/)
+- **Writes ask for consent.** Write tools carry MCP annotations that mark the
+  destructive ones, and several show a dry run until you pass `confirm` or the
+  hash of the preview. [Enable write tools](https://bketelsen.github.io/truenas-mcp/guides/enable-writes/)
+- **No replay of a write.** The server checks the connection before each call
+  and reconnects, but it never sends a call again after a transport error,
+  because the write may already have taken effect. [Configuration](https://bketelsen.github.io/truenas-mcp/reference/configuration/)
 
 ## Install
 
-Prebuilt binaries for Linux, macOS, and Windows are attached to every
-[GitHub release](https://github.com/bketelsen/truenas-mcp/releases), along with
-`.deb`, `.rpm`, and `.apk` packages that also install shell completions and a
-man page. A `dev` pre-release tracks the latest `main` commit.
-
-Every asset of a tagged release is signed with GitHub build provenance (the `dev` pre-release is not). Verify a download with:
-
-```bash
-gh attestation verify truenas-mcp_*_linux_amd64.tar.gz --repo bketelsen/truenas-mcp
+```sh
+gh release download --repo bketelsen/truenas-mcp --pattern 'truenas-mcp_*_linux_amd64.tar.gz'
+tar -xzf truenas-mcp_*_linux_amd64.tar.gz truenas-mcp
+install -m 0755 truenas-mcp ~/.local/bin/
 ```
 
-Or install from source (the module path is `truenas-mcp`, so `go install <url>@latest` does not apply):
+[Install](https://bketelsen.github.io/truenas-mcp/getting-started/install/) lists the
+`.deb`, `.rpm` and `.apk` packages, the macOS and Windows assets, the build
+from source, and how to verify a download with `gh attestation verify`.
 
-```bash
-git clone https://github.com/bketelsen/truenas-mcp.git
-cd truenas-mcp
-make install   # -> $GOPATH/bin/truenas-mcp
-```
+## Use
 
-## Build
-
-```bash
-make            # fmt + vet + build -> build/truenas-mcp
-make help       # list all targets
-```
-
-`make build` stamps the binary with the git tag, commit, and build time; `truenas-mcp --version` prints them.
-
-## Usage
-
-```bash
-# safe default: read-only tools only
-truenas-mcp serve --host truenas.local --api-key YOUR_API_KEY
-
-# with environment variables
-export TRUENAS_HOST=truenas.local
-export TRUENAS_API_KEY=YOUR_API_KEY
-truenas-mcp serve
-
-# opt into mutating tools only when you intentionally want writes
-truenas-mcp serve --host truenas.local --api-key YOUR_API_KEY --enable-writes
-
-# opt into mutating tools via environment variable
-TRUENAS_ENABLE_WRITES=true truenas-mcp serve
-
-# allow self-signed certificates only when explicitly needed
-truenas-mcp serve --host truenas.local --api-key YOUR_API_KEY --tls-insecure
-```
-
-### Read-Only by Default
-
-The MCP server starts in read-only mode unless you explicitly pass `--enable-writes` or set `TRUENAS_ENABLE_WRITES=true`. In the default mode, tools that create, delete, or modify resources are not registered — AI clients cannot see or invoke them.
-
-This fail-closed default is intended to make first contact with a TrueNAS system safe. Keep the server read-only until you have tested the tool responses against your NAS.
-
-TLS certificate verification is enabled by default. If your TrueNAS appliance uses a self-signed certificate, pass `--tls-insecure` or set `TRUENAS_TLS_INSECURE=true` after you understand the tradeoff.
-
-The client checks the appliance connection before each operation and reconnects and authenticates again if that check fails. Operations are serialized. If an operation itself fails at the transport layer, it is reported without automatic replay, since a write may already have taken effect; the next request opens a fresh connection.
-
-For a step-by-step safe first connection checklist, see [First Contact with TrueNAS](docs/first-contact.md).
-
-You can also use the guided runbook script:
-
-```bash
-export TRUENAS_HOST=truenas.local
+```sh
+export TRUENAS_HOST=truenas.example.org
 read -rs TRUENAS_API_KEY
 export TRUENAS_API_KEY
-scripts/first-contact.sh
+truenas-mcp serve
 ```
 
-## MCP Configuration
+The server speaks MCP over stdio, so an MCP client normally starts it. Ask the
+assistant for `truenas_health_report`, or for `truenas_protection_report` on
+one pool, for a first result. Add `--enable-writes` only when you need writes.
+The [configuration](https://bketelsen.github.io/truenas-mcp/reference/configuration/)
+page has the client entry and every flag; [first connection](https://bketelsen.github.io/truenas-mcp/getting-started/first-connection/)
+is the safe checklist for a real appliance.
 
-Add to your Claude Code MCP settings (`~/.claude/settings.json`):
+## Requirements
 
-```json
-{
-  "mcpServers": {
-    "truenas": {
-      "command": "/path/to/truenas-mcp",
-      "args": ["serve", "--host", "truenas.local", "--api-key", "YOUR_API_KEY"]
-    }
-  }
-}
+A TrueNAS SCALE appliance on Goldeye (25.10) or later, and a TrueNAS API
+key, created in the appliance's web interface, for a user with the roles you
+plan to use. The server is 1 binary for Linux, macOS and Windows, on amd64 and
+arm64, and an MCP client starts it over stdio.
+
+## How it works
+
+The server signs in to `wss://<host>/api/current` with the API key and calls
+the appliance's WebSocket JSON-RPC methods; each tool is 1 or more of those
+calls. The [API audit](docs/specs/api-audit.md) records every method, the
+payload each tool sends, and the fallbacks that keep older releases working.
+The [design](docs/design/overview.md) covers the connection, the tool
+registration, the annotations and the tests.
+
+## Develop
+
+```sh
+mise install   # the pinned golangci-lint and Node.js
+make ci        # the gate CI runs
 ```
 
-For write-enabled mode:
+[Build from source](https://bketelsen.github.io/truenas-mcp/contributing/build/)
+names the other targets and the test approach.
 
-```json
-{
-  "mcpServers": {
-    "truenas": {
-      "command": "/path/to/truenas-mcp",
-      "args": ["serve", "--host", "truenas.local", "--api-key", "YOUR_API_KEY", "--enable-writes"]
-    }
-  }
-}
-```
+## Where to go next
 
-## Available Tools
-
-Tools marked with `*` are excluded by default and are registered only with `--enable-writes` or `TRUENAS_ENABLE_WRITES=true`.
-
-| Tool | Description |
-|------|-------------|
-| `truenas_health_report` | Aggregated system, pool, disk, and alert health report |
-| `truenas_system_info` | System hostname, version, uptime, platform |
-| `truenas_disk_list` | Physical disks with health status |
-| `truenas_network_list` | Network interfaces and IPs |
-| `truenas_filesystem_stat` | Owner, mode, permissions, file type and ACL type for 1 path below `/mnt` |
-| `truenas_pool_list` | ZFS pools with status and health |
-| `truenas_pool_get` | Detailed pool info including topology |
-| `truenas_dataset_list` | Datasets with usage and compression |
-| `truenas_dataset_get` | Full dataset properties |
-| `truenas_dataset_create` | Create a new dataset `*` |
-| `truenas_dataset_delete` | Delete a dataset `*` |
-| `truenas_snapshot_list` | Snapshots for a dataset |
-| `truenas_snapshot_get` | Snapshot details |
-| `truenas_scrub_task_list` | Scrub tasks with schedules, thresholds and each Pool's last scan; optionally filter by Pool name |
-| `truenas_snapshot_task_list` | Periodic snapshot tasks with schedule, retention, and last run (optionally for one dataset) |
-| `truenas_snapshot_task_create` | Create a periodic snapshot task with a schedule, retention, and naming schema (refuses a duplicate; `dry_run` returns the payload) `*` |
-| `truenas_snapshot_task_run` | Run 1 periodic snapshot task now ("Run Now"). Dry run by default; `confirm: true` runs it once, waits for the run, and verifies the snapshot. Needs the `SNAPSHOT_TASK_WRITE` role `*` |
-| `truenas_replication_task_create` | Create a replication task into a new target dataset on this appliance: LOCAL transport and PUSH only, bound to periodic snapshot tasks. `dry_run` returns the payload, the bound tasks and `plan_sha256`, and a write needs that hash. Needs the `REPLICATION_TASK_WRITE` role `*` |
-| `truenas_replication_task_list` | Replication tasks with source, target, schedule, retention, and last run. Never returns encryption keys or SSH credential secrets |
-| `truenas_protection_report` | Per-dataset protection: covering snapshot tasks (recursive and excludes applied), newest periodic snapshot age, replication; flags uncovered and stale datasets. Optional `pool`, `dataset`, `flagged_only`; result capped under 40,000 characters |
-| `truenas_snapshot_create` | Create a snapshot `*` |
-| `truenas_snapshot_delete` | Delete a snapshot `*` |
-| `truenas_smb_list` | SMB shares |
-| `truenas_smb_create` | Create an SMB share `*` |
-| `truenas_smb_delete` | Delete an SMB share `*` |
-| `truenas_nfs_list` | NFS exports |
-| `truenas_nfs_create` | Create an NFS export `*` |
-| `truenas_nfs_delete` | Delete an NFS export `*` |
-| `truenas_alert_list` | Active alerts (filterable by level) |
-| `truenas_alert_dismiss` | Dismiss an alert `*` |
-| `truenas_app_list` | Every installed app as a compact summary (name, state, version, updates, portals, train; full detail with `truenas_app_get`) |
-| `truenas_app_get` | App details: running containers, images, mounts, ports |
-| `truenas_app_config` | Installed app configuration values (may contain plaintext secrets) |
-| `truenas_apps_update_report` | Apps with app or container image updates available |
-| `truenas_app_start` | Start an app `*` |
-| `truenas_app_stop` | Stop an app `*` |
-| `truenas_app_restart` | Restart an app (redeploys its containers, returns a job ID) `*` |
-| `truenas_app_update` | Upgrade an app to the latest available version `*` |
-| `truenas_app_update_all` | Upgrade all apps with updates available `*` |
-| `truenas_app_configure` | Change an app's configuration values (deep-merged, redeploys the app) `*` |
-| `truenas_app_compose_update` | Replace a custom (compose) app's whole compose file: `dry_run` returns the current compose, a diff and the hash, and a write needs that hash; waits for the job `*` |
-| `truenas_app_delete` | Delete an app (needs `confirm` = app name; `dry_run` shows the plan; returns a job ID) `*` |
-| `truenas_jobs_list` | Recent TrueNAS jobs, optionally filtered by state or method |
-
-The middleware methods these tools call were audited against TrueNAS 27.0 on 2026-10-22; the audit also records later checks of methods added by later tools, against a live appliance or the middleware source. See [docs/specs/api-audit.md](docs/specs/api-audit.md) for the method table and for the fallbacks that keep older releases working.
-
-## Tool Annotations
-
-Every tool carries [MCP tool annotations](https://modelcontextprotocol.io/specification/2025-06-18/schema#toolannotations): a `title` plus `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint`. Clients can use them to decide how much confirmation a call needs. `openWorldHint` is `false` on every tool, because the server only talks to the one appliance it is configured for.
-
-**Read-only** (`readOnlyHint: true`): every tool registered without `--enable-writes`. They query the appliance and change nothing. `truenas_app_config` is read-only but can return plaintext secrets.
-
-**Destructive** (`destructiveHint: true`): these can lose data or settings, or are hard to undo.
-
-| Tool | Why it is destructive |
-|------|-----------------------|
-| `truenas_dataset_delete` | Deletes the dataset and the data in it |
-| `truenas_snapshot_delete` | Deletes the snapshot |
-| `truenas_smb_delete` | Removes the share's settings and cuts off clients (the data stays) |
-| `truenas_nfs_delete` | Removes the export's settings and cuts off clients (the data stays) |
-| `truenas_app_configure` | Overwrites stored configuration values; TrueNAS keeps no prior copy |
-| `truenas_app_compose_update` | Replaces the custom app's stored compose whole; TrueNAS keeps no prior copy, so the full previous compose is `current_compose` of the dry run and `previous_compose` of a successful write. Needs the `APPS_WRITE` role |
-| `truenas_app_delete` | Deletes the app, its containers, docker volumes and images; with `remove_ix_volumes` also its ix-volumes and their snapshots. Host paths stay |
-| `truenas_app_update` | The upgrade snapshots the app's host-path datasets as well as its ix-volumes, but TrueNAS's app rollback restores only the ix-volumes. Undoing changes on host paths means rolling a dataset back by hand, which also reverts anything else stored in it (see [App updates and recovery](#app-updates-and-recovery)) |
-| `truenas_app_update_all` | The same as `truenas_app_update`, for every app with an update at once |
-| `truenas_snapshot_task_create` | Zettarepl retention selects snapshots by dataset and naming schema, not by the task that made them, so the new task can delete older snapshots whose names match its naming schema |
-| `truenas_snapshot_task_run` | A run does what a scheduled run does: after the snapshot, zettarepl runs retention, which can delete expired snapshots, and starts the linked replication tasks (enabled, `auto`, no schedule of their own). The dry run (the default) lists those replication tasks. Needs the `SNAPSHOT_TASK_WRITE` role |
-| `truenas_replication_task_create` | Every run of the new task writes into the target dataset, and retention can delete snapshots stored there: policy `SOURCE` deletes the target snapshots that the source does not have, and `CUSTOM` deletes them by age. The target must be a new dataset outside every other task's tree, so the tool cannot overwrite existing data, and `readonly` `SET` sets `readonly=on` on the target datasets. Needs the `REPLICATION_TASK_WRITE` role |
-
-**Non-destructive writes** (`destructiveHint: false`): these are additive or recoverable. They are `truenas_dataset_create`, `truenas_snapshot_create`, `truenas_smb_create`, `truenas_nfs_create`, `truenas_alert_dismiss`, `truenas_app_start`, `truenas_app_stop`, and `truenas_app_restart`. Starting or restarting an app still interrupts it briefly, and `truenas_smb_create` with `guest_ok` widens access.
-
-`idempotentHint: true` marks the write tools where repeating a call with the same arguments has no further effect: the four deletes, `truenas_dataset_create`, `truenas_smb_create`, `truenas_alert_dismiss`, `truenas_app_stop`, `truenas_app_delete`, `truenas_app_update`, and `truenas_app_update_all`.
-
-### App updates and recovery
-
-`truenas_app_update` and `truenas_app_update_all` call TrueNAS `app.upgrade` with `snapshot_hostpaths: true`. Before the new version runs, TrueNAS (25.10) stops the app and snapshots:
-
-- **Host paths**: every bind-mounted path outside `/mnt/.ix-apps` is mapped to the ZFS dataset it lives on, and that whole dataset is snapshotted (not recursively) as `<dataset>@ix-app-upgrade-<app>-<previous version>`. A host path that is a subdirectory snapshots the dataset that contains it. Paths that are not on a ZFS pool are skipped, and the upgrade goes ahead without them.
-- **ix-volumes**: the app's ix-volumes dataset is snapshotted recursively as `@<previous version>`. This is the snapshot an app rollback restores.
-
-Custom (compose) apps are the exception: their update only pulls new images, and TrueNAS takes no snapshots for them.
-
-To undo a bad upgrade, first roll the app back in the TrueNAS UI (TrueNAS only rolls back a running app); that restores the previous version and its ix-volumes. Then stop the app (`truenas_app_stop`), roll each host-path dataset back to its `ix-app-upgrade-…` snapshot from the dataset's **Manage Snapshots** list, and start the app again. That rollback reverts everything in the dataset, including files other apps keep there, and ZFS has to destroy any newer snapshots of the dataset (for example from a periodic snapshot task) to do it. TrueNAS never deletes these snapshots itself. They take little space at first but hold on to data that is later changed or deleted, so remove old ones with `truenas_snapshot_delete` once you trust the new version.
-
-### Using the hints with `--enable-writes`
-
-`--enable-writes` decides whether write tools exist at all. The annotations help a client decide what to do with the ones that do. A reasonable client policy is:
-
-- run read-only tools without asking;
-- always ask a person before a destructive tool;
-- apply the client's normal approval policy to the other write tools.
-
-The hints are advisory: the MCP specification tells clients to treat annotations as untrusted unless they come from a trusted server. Read-only mode is the safety boundary: keep the server read-only unless you need writes, and use the hints to add confirmation on top of `--enable-writes`, not instead of it.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
+- [AGENTS.md](AGENTS.md): the rules for agents and contributors.
+- [docs/README.md](docs/README.md): the decisions, designs, specs and plans.
+- [SECURITY.md](SECURITY.md): report a vulnerability privately.
+- [LICENSE](LICENSE): MIT.
