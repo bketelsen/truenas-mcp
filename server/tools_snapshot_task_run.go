@@ -54,7 +54,11 @@ func registerSnapshotTaskRunTool(s *mcp.Server, client truenas.Caller) {
 			"SNAPSHOT_TASK_WRITE). The default is a dry run: it returns the task and the replication tasks the run " +
 			"also starts, and runs nothing. Set confirm to true to run. A run does what a scheduled run does: it makes " +
 			"the snapshot (recursive when the task is recursive), starts every enabled replication task that runs after " +
-			"this task (auto, no schedule), and runs retention, which can delete expired snapshots. A disabled task is " +
+			"this task (auto, no schedule), and runs retention, which can delete expired snapshots. When the time of " +
+			"this run is off the task's schedule, this task's retention never deletes its snapshot: zettarepl prunes " +
+			"only the snapshots whose time matches the schedule of a task. Another task on that dataset with the same " +
+			"naming schema and a schedule that matches that time can prune it; with no such task, the snapshot " +
+			"stays until someone deletes it. A disabled task is " +
 			"refused. The tool calls pool.snapshottask.run once and never again, waits up to timeout_seconds for the " +
 			"task state to show a finished run, and verifies that the reported snapshot exists. When the state is " +
 			"unknown, check truenas_snapshot_task_list before you try again.",
@@ -127,7 +131,9 @@ func runSnapshotTask(ctx context.Context, client truenas.Caller, req *mcp.CallTo
 			"task":               snapshotTaskSummary(task),
 			"starts_replication": replications,
 			"note": "A run makes the snapshot now, starts the listed replication tasks, and runs retention " +
-				"like a scheduled run. Call again with confirm true to run.",
+				"like a scheduled run. When the run time is off the task's schedule, this task's retention does not " +
+				"delete the new snapshot; only another task on that dataset with the same naming schema and a " +
+				"schedule that matches that time can prune it. Call again with confirm true to run.",
 		})
 	}
 

@@ -177,6 +177,24 @@ func newRunFake() *fakeSnapshotRun {
 	}
 }
 
+// TestSnapshotTaskRun_DescriptionOffScheduleRetention keeps the warning that
+// zettarepl retention never prunes a snapshot whose time is off the task's
+// schedule, scoped to the task that made it: another task with the same
+// dataset, naming schema and a matching schedule can prune it (issue #70).
+func TestSnapshotTaskRun_DescriptionOffScheduleRetention(t *testing.T) {
+	for _, tool := range listToolDefs(t, newRunFake().caller(), false) {
+		if tool.Name != "truenas_snapshot_task_run" {
+			continue
+		}
+		if !strings.Contains(tool.Description, "this task's retention never deletes its snapshot") ||
+			!strings.Contains(tool.Description, "Another task on that dataset with the same naming schema") {
+			t.Errorf("description lacks the off-schedule retention warning: %q", tool.Description)
+		}
+		return
+	}
+	t.Fatal("truenas_snapshot_task_run is not registered")
+}
+
 func TestSnapshotTaskRun_DryRunDefault(t *testing.T) {
 	for _, args := range []map[string]any{
 		{"id": 7},
@@ -202,7 +220,9 @@ func TestSnapshotTaskRun_DryRunDefault(t *testing.T) {
 		assertSameJSON(t, out["starts_replication"], `[{"id": 3, "name": "to-backup", "direction": "PUSH",
 		  "transport": "SSH", "target_dataset": "backup/data"}]`)
 		note, _ := out["note"].(string)
-		if !strings.Contains(note, "confirm") || !strings.Contains(note, "retention") {
+		if !strings.Contains(note, "confirm") || !strings.Contains(note, "retention") ||
+			!strings.Contains(note, "this task's retention does not delete") ||
+			!strings.Contains(note, "another task on that dataset with the same naming schema") {
 			t.Errorf("note = %q", note)
 		}
 	}
