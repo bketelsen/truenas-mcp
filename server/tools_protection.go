@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"regexp"
 	"slices"
@@ -338,7 +339,7 @@ func protectionNarrowDatasets(datasets []protectionDataset, pool, dataset string
 		if pool != "" && protectionPoolOf(d.Name) != pool {
 			continue
 		}
-		if dataset != "" && d.Name != dataset && !strings.HasPrefix(d.Name, dataset+"/") {
+		if dataset != "" && !within(d.Name, dataset) {
 			continue
 		}
 		out = append(out, d)
@@ -431,7 +432,7 @@ func protectionDatasetRowFor(d protectionDataset, in protectionInputs, taskByID 
 		if !strings.EqualFold(r.Transport, "LOCAL") && !strings.EqualFold(r.Direction, "PULL") {
 			continue
 		}
-		if d.Name != r.TargetDataset && !strings.HasPrefix(d.Name, r.TargetDataset+"/") {
+		if !within(d.Name, r.TargetDataset) {
 			continue
 		}
 		row.ReplicaOf = append(row.ReplicaOf, r.ID)
@@ -747,7 +748,7 @@ func taskCovers(root string, recursive bool, exclude []string, ds string) (cover
 		if entry == "" {
 			continue
 		}
-		if ds == entry || strings.HasPrefix(ds, entry+"/") {
+		if within(ds, entry) {
 			return false, true
 		}
 	}
@@ -1077,12 +1078,7 @@ func protectionCronValue(value string, names map[string]int) (int, bool) {
 
 // protectionSortedKeys returns the keys of a set in ascending order.
 func protectionSortedKeys(values map[int]bool) []int {
-	keys := make([]int, 0, len(values))
-	for k := range values {
-		keys = append(keys, k)
-	}
-	sort.Ints(keys)
-	return keys
+	return slices.Sorted(maps.Keys(values))
 }
 
 // protectionByteUnits are the IEC units above bytes.

@@ -214,6 +214,12 @@ Read-only mode is the default. The Server always registers 23 read-only Tools; w
 
 Use these helpers instead of manually unpacking `req.Params.Arguments` in each tool.
 
+### Dataset Path Helpers
+
+Two helpers hold the rule for a dataset path below another one, so that a sibling whose name only starts with the same text (`tank/data2` beside `tank/data`) never counts:
+- `within()` in `tools_replication_task.go` — whether a path is a root itself or a dataset below it (used by `truenas_replication_task_create` and `truenas_protection_report`)
+- `taskCovers()` in `tools_protection.go` — whether a snapshot task or replication root, with its recursive flag and exclude list, covers a dataset, and whether an exclude entry hides it (used by `truenas_protection_report` and `truenas_replication_task_create`)
+
 ### Lint Compliance: Intentionally Ignored Errors
 
 The codebase uses explicit blank-identifier assignments to satisfy `errcheck` lint rules for errors that are intentionally not handled:
