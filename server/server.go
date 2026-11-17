@@ -16,6 +16,9 @@ func New(client truenas.Caller, readOnly bool) *mcp.Server {
 		Version: version.Version,
 	}, nil)
 
+	// Refuse a Tool call whose arguments do not decode before any handler runs.
+	s.AddReceivingMiddleware(rejectUndecodableArguments)
+
 	// Read-only tools — always registered
 	registerHealthReportTools(s, client)
 	registerSystemTools(s, client)

@@ -80,9 +80,10 @@ func registerRsyncReadTools(s *mcp.Server, client truenas.Caller) {
 // call. An absent key and a null value both mean no filter.
 //
 // It decodes req.Params.Arguments here instead of through parseArgs: parseArgs
-// drops a decode error and returns an empty map, so a number that json cannot
-// put in a float64 (1e309) would look like an absent id. The filter would then
-// disappear and rsynctask.query would return every task instead of an error.
+// returns an empty map on a decode error, so a number that json cannot put in a
+// float64 (1e309) would look like an absent id, and rsynctask.query would return
+// every task. rejectUndecodableArguments refuses such a call before the handler
+// runs; this check stays as the Tool's own guard.
 func rsyncTaskID(req *mcp.CallToolRequest) (int, bool, error) {
 	arguments := bytes.TrimSpace(req.Params.Arguments)
 	if len(arguments) == 0 || string(arguments) == "null" {

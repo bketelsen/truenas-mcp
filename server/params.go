@@ -1,15 +1,71 @@
 package server
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// decodeArguments decodes the raw arguments of a Tool call into a map. Absent
+// arguments and a JSON null both mean no arguments and give an empty map.
+// Anything else must be a JSON object whose values all decode: a value that
+// json cannot put in a Go value, such as the number 1e309 (out of float64
+// range), is an error that names its key. The keys are checked in sorted
+// order, so the error is the same on each call.
+func decodeArguments(raw json.RawMessage) (map[string]any, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		return map[string]any{}, nil
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(trimmed, &fields); err != nil {
+		return nil, fmt.Errorf("arguments must be a JSON object: %w", err)
+	}
+	keys := make([]string, 0, len(fields))
+	for key := range fields {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	m := make(map[string]any, len(fields))
+	for _, key := range keys {
+		var value any
+		if err := json.Unmarshal(fields[key], &value); err != nil {
+			return nil, fmt.Errorf("parameter %q does not decode: %w", key, err)
+		}
+		m[key] = value
+	}
+	return m, nil
+}
+
+// rejectUndecodableArguments is receiving middleware for tools/call. It runs
+// decodeArguments on the arguments of every Tool call and returns its error to
+// the caller before the Tool handler runs, so before any middleware call. The
+// accessors below read through parseArgs, which has no error return: without
+// this check, arguments that do not decode would read as no arguments, and an
+// optional filter (for example `dataset` of truenas_snapshot_task_list) would
+// disappear.
+func rejectUndecodableArguments(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		if call, ok := req.(*mcp.CallToolRequest); ok && call.Params != nil {
+			if _, err := decodeArguments(call.Params.Arguments); err != nil {
+				return nil, err
+			}
+		}
+		return next(ctx, method, req)
+	}
+}
+
+// parseArgs returns the decoded arguments of a Tool call. A server from New
+// refuses arguments that do not decode before the handler runs
+// (rejectUndecodableArguments), so a handler never sees the empty map that
+// parseArgs returns on a decode error.
 func parseArgs(req *mcp.CallToolRequest) map[string]any {
-	var m map[string]any
-	if err := json.Unmarshal(req.Params.Arguments, &m); err != nil || m == nil {
+	m, err := decodeArguments(req.Params.Arguments)
+	if err != nil {
 		return map[string]any{}
 	}
 	return m
