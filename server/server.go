@@ -25,6 +25,7 @@ func New(client truenas.Caller, readOnly bool) *mcp.Server {
 	registerSnapshotReadTools(s, client)
 	registerDataProtectionReadTools(s, client)
 	registerScrubReadTools(s, client)
+	registerRsyncReadTools(s, client)
 	registerProtectionReportTools(s, client)
 	registerShareReadTools(s, client)
 	registerAlertReadTools(s, client)

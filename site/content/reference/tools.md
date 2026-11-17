@@ -1,6 +1,6 @@
 # Tools
 
-truenas-mcp registers 43 tools. Every name starts with `truenas_`. The 23
+truenas-mcp registers 44 tools. Every name starts with `truenas_`. The 24
 read-only tools are always registered. The 20 tools marked **Write tool**
 exist only when the server runs with `--enable-writes` or
 `TRUENAS_ENABLE_WRITES=true` (see
@@ -140,6 +140,20 @@ TrueNAS decides from the pool history, which this tool cannot see. Schedules
 run in the Appliance's local time.
 
 Parameters: `pool` (exact Pool name).
+
+### `truenas_rsync_task_list`
+
+rsync tasks with direction, mode, local path and Dataset, remote host, port,
+module and path, schedule, flags, enabled state and the state of the job. The
+summary lists the ids of disabled, failing, running, locked and never-run
+tasks. An SSH credential shows only its id and name.
+
+Parameters: `id`.
+
+`job` is the running or queued job, else the last finished job that TrueNAS
+stored in the task row, and null means that no run is recorded. `locked` means
+that the task path is in a locked encrypted Dataset, so TrueNAS skips the run.
+Schedules run in the Appliance's local time.
 
 ### `truenas_snapshot_task_create`
 
