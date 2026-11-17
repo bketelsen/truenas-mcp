@@ -339,8 +339,8 @@ func TestRsyncTaskList_IDFilter(t *testing.T) {
 }
 
 // A number that json cannot decode into a float64 must not read as an absent id:
-// parseArgs drops the decode error, so the filter would disappear and the query
-// would return every task instead of an error.
+// parseArgs returns an empty map on a decode error, so the filter would disappear
+// and the query would return every task instead of an error.
 func TestRsyncTaskList_IDDecodeError(t *testing.T) {
 	for _, bad := range []json.RawMessage{json.RawMessage("1e309"), json.RawMessage("-1e309")} {
 		t.Run(string(bad), func(t *testing.T) {

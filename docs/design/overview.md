@@ -56,13 +56,13 @@ main.go                  Entry point — uses Charm fang CLI framework
     ├── tools_app_compose.go  Custom (compose) app write tool (validate YAML, dry-run diff + hash guard, app.update once, wait for the job)
     ├── linediff.go       LCS-based unified line diff used by the compose tool (no external diff dependency)
     ├── jobs.go           Shared job wait (waitForJob: core.get_jobs poll loop) for the compose and snapshot task run tools
-    └── params.go         Typed MCP parameter accessors
+    └── params.go         Argument decoding (decodeArguments, the tools/call middleware rejectUndecodableArguments) and typed MCP parameter accessors
 ```
 
 ### Data Flow
 
 1. CLI parses flags/env vars and calls `truenas.Connect(host, apiKey, tlsInsecure)` to open a WebSocket
-2. `server.New(client, readOnly)` creates the MCP server (`*mcp.Server`) and registers tools
+2. `server.New(client, readOnly)` creates the MCP server (`*mcp.Server`), adds the receiving middleware `rejectUndecodableArguments`, and registers tools
 3. `server.Run(ctx, s)` starts the MCP server on `StdioTransport`, blocking until disconnect
 4. Each tool handler calls `client.Call(method, params...)` which:
    - Sends a JSON-RPC call over WebSocket with a 30-second timeout
@@ -207,7 +207,10 @@ Read-only mode is the default. The Server always registers 24 read-only Tools; w
 - `queryRows()` — checks one middleware query call and decodes its rows; a call error reads `<label>: <error>` and a decode error `parsing <label>: <error>`, both wrapped (used by the scrub and protection report tools)
 - `callSection()` — calls one middleware method and decodes its answer into `any`, with the error returned unwrapped (used by `truenas_health_report` for each of its sections)
 
-`server/params.go` defines typed accessors for MCP arguments:
+`server/params.go` decodes MCP arguments and defines typed accessors for them:
+- `decodeArguments()` — decodes `req.Params.Arguments` into `map[string]any`. Absent arguments and a JSON `null` give an empty map. Arguments that are not a JSON object are an error (`arguments must be a JSON object`), and so is a value that does not decode, such as the number `1e309` (out of `float64` range). The whole object is decoded into `map[string]any`, so every occurrence of a duplicate key is checked, not only the last one that the map keeps. The error is `parameter "<key>" does not decode` for the first key, in sorted order, whose kept value fails, and `arguments do not decode` when only an earlier occurrence of a duplicate key fails
+- `rejectUndecodableArguments()` — receiving middleware that `server.New` adds with `AddReceivingMiddleware`. For every `tools/call` it runs `decodeArguments()` and returns the error to the client before the Tool handler runs, so before any middleware call. Without it, `parseArgs()` would read such a call as a call with no arguments, and an optional filter (for example `dataset` of `truenas_snapshot_task_list`) would disappear. Guard tests: `server/arguments_test.go`
+- `parseArgs()` — the decoded arguments for the accessors below; it has no error return, because the middleware has already refused arguments that do not decode
 - `requireString()`, `optionalString()`
 - `requireFloat64()`, `optionalFloat64()`
 - `optionalBool()`, `optionalSlice()`

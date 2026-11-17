@@ -20,6 +20,14 @@ Complete catalog of MCP tools exposed by truenas-mcp. Tools marked with **[write
   `OpenWorldHint: new(false)`.
 - Every destructive write sets `DestructiveHint` explicitly; the MCP default is
   true, so a non-destructive write sets `new(false)`.
+- Every tool refuses arguments that do not decode, before any middleware call
+  (`rejectUndecodableArguments` in `server/params.go`, added by `server.New`).
+  Arguments that are not a JSON object give `arguments must be a JSON object`;
+  a value that json cannot decode, such as the number `1e309`, gives
+  `parameter "<key>" does not decode`. Every occurrence of a duplicate key is
+  checked: in `{"extra":1e309,"extra":0}` the first value fails and the error
+  is `arguments do not decode`. The error is a protocol error. Absent
+  arguments and a JSON `null` mean no arguments.
 
 Every tool carries MCP annotations (`Title`, `ReadOnlyHint`, `DestructiveHint`, `IdempotentHint`, `OpenWorldHint: false`) defined next to its `mcp.Tool` literal; `wantToolHints` in `server/annotations_test.go` is the authoritative classification table. All non-**[write]** tools are `readOnlyHint: true`. Destructive writes (`destructiveHint: true`): `truenas_dataset_delete`, `truenas_snapshot_delete`, `truenas_smb_delete`, `truenas_nfs_delete`, `truenas_app_configure`, `truenas_app_compose_update`, `truenas_app_delete`, `truenas_app_update`, `truenas_app_update_all`, `truenas_snapshot_task_create`, `truenas_snapshot_task_run`, `truenas_replication_task_create`. Every other **[write]** tool is `destructiveHint: false`.
 
