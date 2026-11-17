@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-16",
+  "scope": "server",
+  "correction": "A Tool argument that narrows a query must be decoded with error handling: parseArgs drops a decode error (an out-of-range number such as 1e309) and returns an empty map, so the filter disappears and the query returns every row",
+  "evidence": "bketelsen/truenas-mcp#74, cross-review (openai/gpt-6.1-sol) of head cb0fd0e, finding 1",
+  "promoted_to": "server/tools_rsync_test.go"
+}

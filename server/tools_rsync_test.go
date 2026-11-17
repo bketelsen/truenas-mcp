@@ -310,6 +310,11 @@ func TestRsyncTaskList_IDFilter(t *testing.T) {
 		t.Fatalf("params = %s, want [[[\"id\",\"=\",3]]]", encoded)
 	}
 
+	// A null id means no filter, as an absent key does.
+	if _, _, nullCalls := callRsyncReport(t, []map[string]any{rsyncTaskFixture(3)}, map[string]any{"id": nil}); len(nullCalls) != 1 || len(nullCalls[0]) != 0 {
+		t.Fatalf("null id calls = %v, want 1 call with no params", nullCalls)
+	}
+
 	missingMock, missingCalls := rsyncMock(t, []map[string]any{})
 	text := rsyncErrorText(t, missingMock, map[string]any{"id": 7})
 	if !strings.Contains(text, "rsync task 7 not found") {
@@ -326,6 +331,38 @@ func TestRsyncTaskList_IDFilter(t *testing.T) {
 	for _, bad := range []any{"3", 0, -1, 1.5, true, 2147483648} {
 		t.Run(fmt.Sprintf("%v", bad), func(t *testing.T) {
 			text := rsyncErrorText(t, neverCalled(t), map[string]any{"id": bad})
+			if !strings.Contains(text, `parameter "id"`) {
+				t.Fatalf("error = %q, want a complaint about the id parameter", text)
+			}
+		})
+	}
+}
+
+// A number that json cannot decode into a float64 must not read as an absent id:
+// parseArgs drops the decode error, so the filter would disappear and the query
+// would return every task instead of an error.
+func TestRsyncTaskList_IDDecodeError(t *testing.T) {
+	for _, bad := range []json.RawMessage{json.RawMessage("1e309"), json.RawMessage("-1e309")} {
+		t.Run(string(bad), func(t *testing.T) {
+			args := map[string]any{"id": bad}
+			encoded, err := json.Marshal(args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := `{"id":` + string(bad) + `}`; string(encoded) != want {
+				t.Fatalf("request arguments = %s, want %s", encoded, want)
+			}
+			mock, calls := rsyncMock(t, []map[string]any{rsyncTaskFixture(3)})
+			result, callErr := callTool(t, mock, true, "truenas_rsync_task_list", args)
+			if len(*calls) != 0 {
+				t.Fatalf("middleware calls = %v, want none", *calls)
+			}
+			text := ""
+			if callErr != nil {
+				text = callErr.Error()
+			} else if result != nil && result.IsError {
+				text = resultText(t, result)
+			}
 			if !strings.Contains(text, `parameter "id"`) {
 				t.Fatalf("error = %q, want a complaint about the id parameter", text)
 			}

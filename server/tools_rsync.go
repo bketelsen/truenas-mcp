@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 
@@ -76,14 +78,32 @@ func registerRsyncReadTools(s *mcp.Server, client truenas.Caller) {
 // one, and refuses anything but a whole JSON number from 1 to maxRsyncTaskID, so
 // a string "3", 0, a negative value or 1.5 is an error before any middleware
 // call. An absent key and a null value both mean no filter.
+//
+// It decodes req.Params.Arguments here instead of through parseArgs: parseArgs
+// drops a decode error and returns an empty map, so a number that json cannot
+// put in a float64 (1e309) would look like an absent id. The filter would then
+// disappear and rsynctask.query would return every task instead of an error.
 func rsyncTaskID(req *mcp.CallToolRequest) (int, bool, error) {
-	v, present := parseArgs(req)["id"]
-	if !present || v == nil {
+	arguments := bytes.TrimSpace(req.Params.Arguments)
+	if len(arguments) == 0 || string(arguments) == "null" {
 		return 0, false, nil
 	}
-	number, ok := v.(float64)
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(arguments, &fields); err != nil {
+		return 0, false, fmt.Errorf("arguments must be a JSON object: %w", err)
+	}
+	raw, present := fields["id"]
+	if !present || string(bytes.TrimSpace(raw)) == "null" {
+		return 0, false, nil
+	}
+	// A value that is not a number json can hold, such as 1e309, fails here.
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return 0, false, fmt.Errorf("parameter %q must be a whole number from 1 to %d: %w", "id", maxRsyncTaskID, err)
+	}
+	number, ok := value.(float64)
 	if !ok {
-		return 0, false, fmt.Errorf("parameter %q must be a number, got %T", "id", v)
+		return 0, false, fmt.Errorf("parameter %q must be a number, got %T", "id", value)
 	}
 	if number != math.Trunc(number) || number < 1 || number > maxRsyncTaskID {
 		return 0, false, fmt.Errorf("parameter %q must be a whole number from 1 to %d, got %v", "id", maxRsyncTaskID, number)

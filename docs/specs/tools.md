@@ -158,7 +158,7 @@ List scrub tasks and each Pool's last scan. Code: `server/tools_scrub.go`, regis
 ### `truenas_rsync_task_list`
 List rsync tasks. Code: `server/tools_rsync.go`, registered by `registerRsyncReadTools` in both modes.
 - Parameters:
-  - `id` (number, optional) — task id, a whole JSON number from 1 to 2147483647. A string `"3"`, `0`, `-1`, `1.5` or `true` is an error before any middleware call. An absent key and a null value both mean no filter.
+  - `id` (number, optional) — task id, a whole JSON number from 1 to 2147483647. A string `"3"`, `0`, `-1`, `1.5`, `true`, or a number that does not decode (for example `1e309`) is an error before any middleware call. An absent key and a null value both mean no filter.
 - API: `rsynctask.query`; with `id` the filter `[["id", "=", id]]`, otherwise no parameters. Calls are never retried. A call error reads `rsynctask.query: <error>` and a parse error `parsing rsynctask.query: <error>`. A filtered query with no row is the error `rsync task <id> not found`.
 - Output: `{ "summary": {...}, "tasks": [...], "notes": [...] }`. Tasks are sorted by numeric `id`; id lists are always arrays, never null, in task id order.
 - Summary fields: `tasks_total`, `tasks_enabled`, `disabled_task_ids` (`enabled` is not true), `failing_task_ids` (`job.state` is `FAILED` or `ABORTED`), `running_task_ids` (`job.state` is `RUNNING` or `WAITING`), `locked_task_ids` (`locked` is true), `never_run_task_ids` (`job` is null).
