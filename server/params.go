@@ -12,10 +12,16 @@ import (
 
 // decodeArguments decodes the raw arguments of a Tool call into a map. Absent
 // arguments and a JSON null both mean no arguments and give an empty map.
-// Anything else must be a JSON object whose values all decode: a value that
+// Anything else must be a JSON object that decodes as a whole: a value that
 // json cannot put in a Go value, such as the number 1e309 (out of float64
-// range), is an error that names its key. The keys are checked in sorted
-// order, so the error is the same on each call.
+// range), is an error.
+//
+// The whole object is decoded into map[string]any, so every occurrence of a
+// key is checked: in {"extra":1e309,"extra":0} the first value fails, although
+// the last one wins in the map. Only the error text comes from a second pass
+// over the keys in sorted order, which names the first key whose last value
+// does not decode; when no last value fails (a duplicate key), the error does
+// not name a key.
 func decodeArguments(raw json.RawMessage) (map[string]any, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || string(trimmed) == "null" {
@@ -25,20 +31,23 @@ func decodeArguments(raw json.RawMessage) (map[string]any, error) {
 	if err := json.Unmarshal(trimmed, &fields); err != nil {
 		return nil, fmt.Errorf("arguments must be a JSON object: %w", err)
 	}
+	var m map[string]any
+	err := json.Unmarshal(trimmed, &m)
+	if err == nil {
+		return m, nil
+	}
 	keys := make([]string, 0, len(fields))
 	for key := range fields {
 		keys = append(keys, key)
 	}
 	slices.Sort(keys)
-	m := make(map[string]any, len(fields))
 	for _, key := range keys {
 		var value any
-		if err := json.Unmarshal(fields[key], &value); err != nil {
-			return nil, fmt.Errorf("parameter %q does not decode: %w", key, err)
+		if fieldErr := json.Unmarshal(fields[key], &value); fieldErr != nil {
+			return nil, fmt.Errorf("parameter %q does not decode: %w", key, fieldErr)
 		}
-		m[key] = value
 	}
-	return m, nil
+	return nil, fmt.Errorf("arguments do not decode: %w", err)
 }
 
 // rejectUndecodableArguments is receiving middleware for tools/call. It runs

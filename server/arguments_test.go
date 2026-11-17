@@ -110,6 +110,10 @@ func TestDecodeArguments(t *testing.T) {
 		{raw: `{"outer":{"inner":[1e309]}}`, wantErr: `parameter "outer" does not decode`},
 		// Keys are checked in sorted order, so the error names the same key on every call.
 		{raw: `{"zz":1e309,"aa":1e309}`, wantErr: `parameter "aa" does not decode`},
+		// Every occurrence of a duplicate key is checked, not only the last one.
+		{raw: `{"name":"tank/x","extra":1e309,"extra":0}`, wantErr: "arguments do not decode"},
+		{raw: `{"extra":0,"extra":1e309}`, wantErr: `parameter "extra" does not decode`},
+		{raw: `{"extra":1,"extra":2}`, want: map[string]any{"extra": float64(2)}},
 	} {
 		t.Run(tc.raw, func(t *testing.T) {
 			got, err := decodeArguments(json.RawMessage(tc.raw))
@@ -161,6 +165,32 @@ func TestUndecodableArguments_WriteTool(t *testing.T) {
 	}
 	if calls := caller.recorded(); len(calls) != 0 {
 		t.Fatalf("middleware calls = %v, want none", calls)
+	}
+}
+
+// A duplicate key whose earlier value does not decode must not pass: the map
+// keeps only the last value, so a check of that value alone would let the call
+// reach the handler. The write Tool must make no middleware call.
+func TestUndecodableArguments_DuplicateKey(t *testing.T) {
+	for _, tc := range []struct {
+		tool     string
+		readOnly bool
+		args     json.RawMessage
+	}{
+		{tool: "truenas_dataset_create", args: json.RawMessage(`{"name":"tank/x","extra":1e309,"extra":0}`)},
+		{tool: "truenas_snapshot_task_list", readOnly: true, args: json.RawMessage(`{"dataset":1e309,"dataset":"tank/x"}`)},
+	} {
+		t.Run(tc.tool, func(t *testing.T) {
+			caller := &recordingCaller{}
+			result, err := callToolRaw(t, caller, tc.readOnly, tc.tool, tc.args)
+			text := callErrorText(t, result, err)
+			if !strings.Contains(text, "arguments do not decode") {
+				t.Fatalf("error = %q, want an error that the arguments do not decode", text)
+			}
+			if calls := caller.recorded(); len(calls) != 0 {
+				t.Fatalf("middleware calls = %v, want none", calls)
+			}
+		})
 	}
 }
 
