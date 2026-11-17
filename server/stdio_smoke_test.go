@@ -67,6 +67,7 @@ func TestStdioSmoke_ReadOnlyToolList(t *testing.T) {
 		"truenas_system_info",
 		"truenas_pool_list",
 		"truenas_scrub_task_list",
+		"truenas_rsync_task_list",
 		"truenas_dataset_list",
 		"truenas_apps_update_report",
 		"truenas_jobs_list",

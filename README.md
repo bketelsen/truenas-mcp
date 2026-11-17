@@ -18,7 +18,7 @@ delete anything.
 
 ## What it does
 
-- **Read-only by default.** The default mode registers the 23 read-only tools
+- **Read-only by default.** The default mode registers the 24 read-only tools
   only. A write tool that is not registered does not exist for the client, so
   it cannot be called by mistake. [Read-only by default](https://bketelsen.github.io/truenas-mcp/concepts/read-only/)
 - **One view of the appliance.** Pools, datasets, snapshots, shares, alerts,

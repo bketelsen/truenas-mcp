@@ -46,7 +46,7 @@ The server confirms the mode on stderr:
 Starting MCP server on stdio (writes enabled)...
 ```
 
-The client now lists 43 tools: the 23 read-only tools and the 20 write tools.
+The client now lists 44 tools: the 24 read-only tools and the 20 write tools.
 
 ## Step 3: set a client policy from the annotations
 
