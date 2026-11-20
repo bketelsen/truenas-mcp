@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-19",
+  "scope": "scripts",
+  "correction": "Generate the first-contact MCP command from the build location build/truenas-mcp, not the clone root; keep API keys out of the printed configuration.",
+  "evidence": "Issue review finding: https://github.com/bketelsen/truenas-mcp/issues/77",
+  "promoted_to": "test/first-contact.test.mjs"
+}

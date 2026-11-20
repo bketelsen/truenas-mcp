@@ -50,14 +50,22 @@ func registerAppConfigureTools(s *mcp.Server, client truenas.Caller) {
 		if err != nil {
 			return nil, err
 		}
-		values, err := requireObject(req, "values")
+		// Reread values losslessly after the global argument guard has passed.
+		arguments, err := decodeConfigObject(req.Params.Arguments)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("parsing app configure arguments: %w", err)
+		}
+		values, ok := arguments["values"].(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("required parameter %q missing or not an object", "values")
 		}
 		if len(values) == 0 {
 			return nil, fmt.Errorf("parameter %q must contain at least one key", "values")
 		}
-		dryRun := optionalBool(req, "dry_run")
+		dryRun, err := strictBool(req, "dry_run", false)
+		if err != nil {
+			return nil, err
+		}
 
 		result, err := client.Call("app.query", [][]any{{"name", "=", name}})
 		if err != nil {
@@ -78,8 +86,8 @@ func registerAppConfigureTools(s *mcp.Server, client truenas.Caller) {
 		if err != nil {
 			return nil, fmt.Errorf("app.config: %w", err)
 		}
-		var current map[string]any
-		if err := json.Unmarshal(result, &current); err != nil {
+		current, err := decodeConfigObject(result)
+		if err != nil {
 			return nil, fmt.Errorf("parsing app.config: %w", err)
 		}
 
@@ -173,9 +181,7 @@ func changedPaths(prefix string, before, after map[string]any) []string {
 			paths = append(paths, changedPaths(path, bm, am)...)
 			continue
 		}
-		bj, _ := json.Marshal(bv)
-		aj, _ := json.Marshal(av)
-		if string(bj) != string(aj) {
+		if !configValuesEqual(bv, av) {
 			paths = append(paths, path)
 		}
 	}

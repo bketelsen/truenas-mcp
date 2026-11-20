@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-19",
+  "scope": "server/shares",
+  "correction": "Read share deletion IDs from raw integer literals into int64; reject fractions, exponent notation and overflow without float64 rounding or machine-sized conversion.",
+  "evidence": "Issue review finding: https://github.com/bketelsen/truenas-mcp/issues/80",
+  "promoted_to": "server/tools_share_delete_test.go"
+}

@@ -323,7 +323,8 @@ Create an SMB share.
 ### `truenas_smb_delete` **[write]**
 Delete an SMB share.
 - Parameters:
-  - `id` (number, required) — share ID
+  - `id` (integer, required) — share ID as a JSON integer literal, from `-9223372036854775808` to `9223372036854775807` inclusive
+- Conversion: `requireShareID` reads the raw token and forwards an exact Go `int64`, never a rounded float64 or machine-sized `int`. These signed int64 bounds are the Server's conversion range, not a claim about valid Appliance IDs. Missing/null IDs, strings, booleans, arrays/objects, fractions, exponent notation (even `1e0`) and overflow are refused before any middleware call. `9007199254740993` is forwarded unchanged.
 - API: `sharing.smb.delete`
 
 ### `truenas_nfs_list`
@@ -337,12 +338,14 @@ Create an NFS export.
   - `path` (string, required) — filesystem path
   - `networks` (string[], optional) — allowed networks (e.g., `192.168.1.0/24`)
   - `hosts` (string[], optional) — allowed hosts
+- Validation: `strictStringList` checks each restriction before any middleware call. A non-array (including an empty string) or an array containing a non-string is an error. Each absent key, null or empty array omits that restriction from the payload; a valid nonempty array is forwarded unchanged. If both restrictions are omitted, the Server sends only `path`, so callers must not mistake omission for an access restriction.
 - API: `sharing.nfs.create`
 
 ### `truenas_nfs_delete` **[write]**
 Delete an NFS export.
 - Parameters:
-  - `id` (number, required) — export ID
+  - `id` (integer, required) — export ID as a JSON integer literal, from `-9223372036854775808` to `9223372036854775807` inclusive
+- Conversion and validation: the same raw-token `int64` reader and literal-only restrictions as [SMB delete](#truenas_smb_delete-write). The signed range is a Server conversion bound, not an Appliance ID validity guarantee. Invalid input makes no middleware call.
 - API: `sharing.nfs.delete`
 
 ## Alert Tools (`tools_alert.go`)
@@ -432,6 +435,7 @@ Delete an installed app and return the job ID. Destructive and irreversible.
   - `confirm` (string, required) — type the app name again to confirm deletion; must equal `name` exactly (case-sensitive, no trimming)
   - `remove_ix_volumes` (boolean, optional, default false) — also destroy the app's ix-volumes dataset (TrueNAS-managed storage) recursively, with its snapshots. Host paths are never removed
   - `dry_run` (boolean, optional, default false) — check and describe; do not delete
+- `dry_run` uses `strictBool(req, "dry_run", false)`: absent/null means false; only JSON booleans are accepted when present. Strings (including `""`, `"true"` and `"false"`), numbers, arrays and objects are errors before any middleware call, including `app.query`. The exact-name `confirm` check remains mandatory on previews and writes.
 - API: `app.query` with filter `[["name", "=", name]]` (existence check, also on dry runs), then `app.delete(name, options)`. This is a TrueNAS job; the result is the job ID.
 - Steps: (1) `confirm != name` is an error and makes NO middleware call; (2) no app match is the error `app "<name>" not found`; (3) options are built explicitly with all 3 keys: `{"remove_images": true, "remove_ix_volumes": <flag>, "force_remove_custom_app": false}` (`AppDelete` model; the middleware defaults are true/false/false, but the tool never relies on them); (4) with `dry_run`, `app.delete` is NOT called.
 - Returns: `{ "name", "job_id", "remove_ix_volumes" }`; with `dry_run`: `{ "dry_run": true, "name", "method": "app.delete", "options", "app": {"state", "version", "custom_app"}, "effects": [...] }`
@@ -467,11 +471,16 @@ Change configuration values of an installed catalog app and return the job ID.
 - Parameters:
   - `name` (string, required) — app name
   - `values` (object, required) — PARTIAL nested config in the shape `truenas_app_config` returns
-  - `dry_run` (boolean, optional) — return the merged config and changed paths without applying
+  - `dry_run` (boolean, optional, default false) — return the merged config and changed paths without applying
+- `dry_run` uses `strictBool(req, "dry_run", false)`: absent/null means false, and any present non-boolean is refused before any middleware call. This includes empty strings, string booleans, numbers, arrays and objects.
 - API: `app.query` (existence + `custom_app` check), `app.config` (current values), then `app.update(name, {"values": <merged>})`
 - Returns: `{ "name", "job_id", "changed_paths" }`; with `dry_run`: `{ "name", "dry_run": true, "changed_paths", "values" }`
 - Why the client-side merge: TrueNAS `app.update` performs a SHALLOW top-level `dict.update` of the stored config with the caller's `values` (middleware `plugins/apps/crud.py`, `update_internal`), then re-populates schema defaults for anything now missing. A partial nested payload therefore replaces an entire section and resets its siblings — proven live on 25.10.4: after setting `resources.limits.memory=512`, a raw `app.update` carrying only `{"resources": {"limits": {"cpus": 2}}}` reset memory to its 4096 default. The tool deep-merges into the current config (objects recurse; lists, scalars, and null replace whole) and sends the complete result, so only the named leaves change.
 - Guards: top-level sections must already exist (typo protection); `ix_*` sections are refused as input and stripped from the payload and change report because the middleware regenerates them (`RESERVED_NAMES`); an identical payload is refused as a no-op; custom compose apps are refused (their config is `custom_compose_config`, a different contract).
+- Exact numbers: the configuration-only `decodeConfigObject` helper uses `json.Decoder.UseNumber()` for stored `app.config` and rereads incoming raw `values`. It accepts exactly 1 JSON object; null, malformed JSON and trailing data are refused. Numeric tokens are preserved in the merged preview and serialized `app.update` payload, including unchanged siblings, nested arrays, integers beyond `2**53`, precise decimals and tiny nonzero values such as `1e-400`.
+- Numeric equality: `configValuesEqual` and `normalizedConfigNumber` compare exact decimal coefficients/exponents, recursively inside objects and arrays. `1`, `1.0` and `1e0` are equal; adjacent large integers remain different. Exponents are not expanded into powers of 10, so an extreme exponent cannot cause an allocation proportional to its magnitude. A numeric-only no-op gives no changed paths in a preview and the existing `identical` refusal on a write.
+- Global rejection is unchanged: incoming arguments still pass `decodeArguments` and `rejectUndecodableArguments` first, so `1e309` is refused even in an earlier duplicate key hidden by a later valid value. The lossless path does not extend the accepted incoming argument range or change unrelated read handlers.
+- Offline guards: `server/tools_app_configure_numbers_test.go` checks exact serialized payloads and previews, numeric no-ops, invalid stored configuration and retained argument rejection; `server/app_config_json_test.go` checks the decoder and bounded normalization. These are not live Appliance checks; see [api-audit.md](api-audit.md#offline-safety-regression-checks-2026-11-19).
 - Side effect: unless the app is STOPPED, the middleware runs `compose up --force-recreate`, so applying a change restarts the app's containers.
 
 ## Job and Report Tools (`tools_reports.go`)

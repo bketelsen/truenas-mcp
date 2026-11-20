@@ -100,7 +100,7 @@ if os.environ.get("TRUENAS_TLS_INSECURE", "").lower() in {"1", "true", "yes", "o
 print(json.dumps({
     "mcpServers": {
         "truenas": {
-            "command": f"{repo}/truenas-mcp",
+            "command": f"{repo}/build/truenas-mcp",
             "args": args,
         }
     }

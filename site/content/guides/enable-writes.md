@@ -92,6 +92,37 @@ would do:
 | `truenas_app_compose_update` | `dry_run: true` returns the current compose, the diff and the hash that the write needs. |
 | `truenas_app_delete` | `dry_run: true` describes the delete. |
 
+For `truenas_app_configure` and `truenas_app_delete`, `dry_run` must be a
+JSON boolean when present. String booleans (`"true"`, `"false"`), an empty
+string, numbers, arrays and objects fail before any Appliance call.
+Absent/null means false, so a preview must explicitly send `true`.
+App deletion still needs `confirm` to repeat the exact app name, on a
+preview as well as a write.
+
+## Input safety before a write
+
+- NFS create requires string arrays for `hosts` and `networks`. A non-array
+  or mixed-type array fails before any Appliance call. An absent key, null
+  or an empty array omits that restriction; if both are omitted, only `path`
+  is sent. Do not treat omission as an access restriction.
+- SMB/NFS delete requires an integer-literal `id`, with no decimal point or
+  exponent notation. The Server forwards an exact signed int64 from
+  `-9223372036854775808` to `9223372036854775807`; the Appliance decides which
+  IDs are valid. Invalid input is refused before any Appliance call.
+- Catalog app configuration preserves exact JSON number tokens in previews
+  and update payloads, including unchanged siblings and nested arrays.
+  Numeric-only no-ops such as changing `1` to `1.0` or `1e0` do not start an
+  update. The comparison is exact and does not expand extreme exponents.
+  Null, malformed or trailing stored configuration fails safely.
+- The global argument guard still refuses values that do not decode, such
+  as `1e309`, including an earlier duplicate-key value followed by a valid
+  value. The lossless configuration and share-ID readers do not bypass it.
+
+The [tool reference](../reference/tools.md#shares) and
+[configuration tool entry](../reference/tools.md#truenas_app_configure) give
+the complete input behavior. These checks do not replace client approval or
+read-only mode.
+
 ## Undo it
 
 Restart the server without `--enable-writes`, and unset

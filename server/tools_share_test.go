@@ -3,6 +3,8 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -291,10 +293,10 @@ func TestSMBDelete_Success(t *testing.T) {
 			if len(params) == 0 {
 				t.Fatal("expected params")
 			}
-			// Verify float64→int conversion
-			id, ok := params[0].(int)
+			// The Server forwards an exact, architecture-independent int64.
+			id, ok := params[0].(int64)
 			if !ok {
-				t.Fatalf("params[0] is %T, want int", params[0])
+				t.Fatalf("params[0] is %T, want int64", params[0])
 			}
 			if id != 5 {
 				t.Errorf("id = %d, want 5", id)
@@ -335,24 +337,117 @@ func TestNFSCreate_WithNetworksAndHosts(t *testing.T) {
 			if p["path"] != "/mnt/tank/data" {
 				t.Errorf("path = %v, want /mnt/tank/data", p["path"])
 			}
-			networks, ok := p["networks"].([]any)
-			if !ok || len(networks) == 0 {
-				t.Error("expected networks")
+			if !reflect.DeepEqual(p["networks"], []string{"192.0.2.0/24", "198.51.100.0/24"}) {
+				t.Errorf("networks = %v, want both networks unchanged", p["networks"])
 			}
-			hosts, ok := p["hosts"].([]any)
-			if !ok || len(hosts) == 0 {
-				t.Error("expected hosts")
+			if !reflect.DeepEqual(p["hosts"], []string{"host1.example", "host2.example"}) {
+				t.Errorf("hosts = %v, want both hosts unchanged", p["hosts"])
 			}
 			return json.RawMessage(`{"id":1}`), nil
 		},
 	}
 	_, err := callTool(t, mock, false, "truenas_nfs_create", map[string]any{
 		"path":     "/mnt/tank/data",
-		"networks": []any{"192.168.1.0/24"},
-		"hosts":    []any{"host1.local"},
+		"networks": []any{"192.0.2.0/24", "198.51.100.0/24"},
+		"hosts":    []any{"host1.example", "host2.example"},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestNFSCreate_RejectsMalformedRestrictions(t *testing.T) {
+	for _, field := range []string{"networks", "hosts"} {
+		for _, value := range []any{
+			"", "192.0.2.1", 0, 1, true, false, map[string]any{},
+			[]any{"192.0.2.1", 1}, []any{"192.0.2.1", true},
+			[]any{"192.0.2.1", nil}, []any{"192.0.2.1", map[string]any{}},
+			[]any{"192.0.2.1", []any{"198.51.100.1"}},
+		} {
+			t.Run(fmt.Sprintf("%s/%T/%v", field, value, value), func(t *testing.T) {
+				calls := 0
+				mock := &mockCaller{CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+					calls++
+					return nil, fmt.Errorf("unexpected middleware call %q", method)
+				}}
+				args := map[string]any{
+					"path": "/mnt/tank/data", "networks": []any{"192.0.2.0/24"}, "hosts": []any{"host1.example"},
+				}
+				args[field] = value
+				result, err := callTool(t, mock, false, "truenas_nfs_create", args)
+				if calls != 0 {
+					t.Errorf("middleware calls = %d, want 0", calls)
+				}
+				if err == nil && (result == nil || !result.IsError) {
+					t.Fatal("expected malformed restriction error")
+				}
+				msg := ""
+				if err != nil {
+					msg = err.Error()
+				} else {
+					msg = resultText(t, result)
+				}
+				if !strings.Contains(msg, `parameter "`+field+`"`) {
+					t.Errorf("error = %q, want validation error naming %s", msg, field)
+				}
+			})
+		}
+	}
+}
+
+func TestNFSCreate_RestrictionListSemantics(t *testing.T) {
+	cases := []struct {
+		name    string
+		present bool
+		value   any
+		want    []string
+	}{
+		{name: "absent"},
+		{name: "null", present: true},
+		{name: "empty", present: true, value: []any{}},
+		{name: "nonempty", present: true, value: []any{"192.0.2.1"}, want: []string{"192.0.2.1"}},
+	}
+	for _, networks := range cases {
+		for _, hosts := range cases {
+			t.Run(networks.name+"/"+hosts.name, func(t *testing.T) {
+				calls := 0
+				mock := &mockCaller{CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+					calls++
+					if method != "sharing.nfs.create" || len(params) != 1 {
+						t.Errorf("call = %s %v, want sharing.nfs.create with 1 payload", method, params)
+						return nil, fmt.Errorf("unexpected middleware call")
+					}
+					want := map[string]any{"path": "/mnt/tank/data"}
+					if networks.want != nil {
+						want["networks"] = networks.want
+					}
+					if hosts.want != nil {
+						want["hosts"] = hosts.want
+					}
+					if !reflect.DeepEqual(params[0], want) {
+						t.Errorf("payload = %#v, want %#v", params[0], want)
+					}
+					return json.RawMessage(`{"id":1}`), nil
+				}}
+				args := map[string]any{"path": "/mnt/tank/data"}
+				if networks.present {
+					args["networks"] = networks.value
+				}
+				if hosts.present {
+					args["hosts"] = hosts.value
+				}
+				result, err := callTool(t, mock, false, "truenas_nfs_create", args)
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if result.IsError {
+					t.Fatalf("tool error: %s", resultText(t, result))
+				}
+				if calls != 1 {
+					t.Errorf("middleware calls = %d, want 1", calls)
+				}
+			})
+		}
 	}
 }
 
@@ -397,9 +492,9 @@ func TestNFSDelete_Success(t *testing.T) {
 			if method != "sharing.nfs.delete" {
 				t.Errorf("method = %q, want sharing.nfs.delete", method)
 			}
-			id, ok := params[0].(int)
+			id, ok := params[0].(int64)
 			if !ok {
-				t.Fatalf("params[0] is %T, want int", params[0])
+				t.Fatalf("params[0] is %T, want int64", params[0])
 			}
 			if id != 3 {
 				t.Errorf("id = %d, want 3", id)

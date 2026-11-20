@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-19",
+  "scope": "server/shares",
+  "correction": "Validate NFS hosts and networks as string arrays before any middleware call; reject malformed restrictions instead of dropping them, while absent/null/empty arrays omit restrictions.",
+  "evidence": "Issue review finding: https://github.com/bketelsen/truenas-mcp/issues/79",
+  "promoted_to": "server/tools_share_test.go"
+}

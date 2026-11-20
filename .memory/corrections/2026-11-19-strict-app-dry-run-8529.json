@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-19",
+  "scope": "server/app",
+  "correction": "Validate app delete/configure dry_run with strictBool before any middleware call so malformed input cannot select a write instead of a preview.",
+  "evidence": "Issue review finding: https://github.com/bketelsen/truenas-mcp/issues/78",
+  "promoted_to": "server/tools_app_delete_test.go"
+}
