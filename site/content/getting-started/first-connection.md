@@ -59,8 +59,11 @@ page shows the client entry.
 
     The repository has a guided script. It builds the server, checks that
     writes are off and that `TRUENAS_HOST` is not a URL, and prints the
-    read-only command and the client configuration. It never prints the API
-    key, and it contacts the appliance only with `--run-server`.
+    read-only command and the client configuration. Both use the absolute
+    clone path to `build/truenas-mcp`, the output of `make build`, not a binary
+    at the clone root. The JSON uses `YOUR_API_KEY` as a placeholder, never the
+    supplied key. The script contacts the appliance only with `--run-server`,
+    which executes that same `build/truenas-mcp` binary.
 
     ```sh
     scripts/first-contact.sh              # check, build and print the runbook

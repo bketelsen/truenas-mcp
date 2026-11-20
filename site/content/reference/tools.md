@@ -11,6 +11,12 @@ do not wait for the job: follow it with `truenas_jobs_list`.
 `truenas_app_compose_update` and `truenas_snapshot_task_run` wait and report
 the result.
 
+Every tool rejects arguments that do not decode before any Appliance call.
+Arguments must be a JSON object (absent/null means no arguments). Numbers
+outside float64 decoding range, such as `1e309`, are refused even in an
+earlier duplicate key followed by a valid value. The exact-number paths
+below do not bypass this global guard.
+
 The full contract, with the TrueNAS middleware method behind each tool, is the
 [tool catalog spec](https://github.com/bketelsen/truenas-mcp/blob/main/docs/specs/tools.md).
 
@@ -225,7 +231,12 @@ Parameters: `name`, `path` *required*; `comment`, `guest_ok`.
 
 Delete an SMB share. The data stays.
 
-Parameters: `id` *required*.
+Parameters: `id` *required*, a JSON integer literal from
+`-9223372036854775808` to `9223372036854775807` inclusive. The Server forwards
+it exactly as signed int64, including IDs above `2**53`. These are conversion
+bounds, not a guarantee that an ID exists or is valid on the Appliance.
+Missing/null IDs, strings, fractions, exponent notation (even `1e0`), other
+non-numbers and overflow are refused before any Appliance call.
 
 ### `truenas_nfs_list`
 
@@ -239,13 +250,22 @@ Create an NFS export.
 
 Parameters: `path` *required*; `networks`, `hosts`.
 
+Each restriction must be an array containing only strings. A non-array
+(including an empty string) or a mixed-type array is refused before any
+Appliance call. An absent key, null or an empty array omits that restriction;
+nonempty string arrays pass through unchanged. With both restrictions
+omitted, the payload contains only `path`: omission is not an access limit.
+
 ### `truenas_nfs_delete`
 
 **Write tool.** Registered only with `--enable-writes`.
 
 Delete an NFS export. The data stays.
 
-Parameters: `id` *required*.
+Parameters: `id` *required*, with the same exact signed int64 integer-literal
+range and validation as [SMB delete](#truenas_smb_delete). Decimal points and
+exponent notation are not accepted. The range bounds conversion in the
+Server; the Appliance decides whether the ID is valid.
 
 ## Alerts and jobs
 
@@ -333,6 +353,21 @@ Change configuration values of a catalog app. `values` is a partial configuratio
 
 Parameters: `name`, `values` *required*; `dry_run`.
 
+`dry_run: true` previews without calling `app.update`. Absent/null means
+false. A present value must be a JSON boolean: string booleans, empty
+strings, numbers, arrays and objects are refused before any Appliance call.
+
+This configuration write path preserves the exact JSON number tokens from
+stored configuration and incoming raw `values`, including unchanged
+siblings, nested arrays, integers above `2**53`, precise decimals and tiny
+nonzero values such as `1e-400`. Preview and update payloads retain the same
+tokens. A numeric-only no-op is refused on a write and shows no changed paths
+on a preview: `1`, `1.0` and `1e0` compare equal, including inside arrays.
+Comparison never expands extreme exponents into huge powers of 10. Stored
+configuration must be exactly 1 JSON object; null, malformed or trailing data
+is an error. These guarantees apply to `truenas_app_configure`, not to
+unrelated read tools.
+
 ### `truenas_app_compose_update`
 
 **Write tool.** Registered only with `--enable-writes`.
@@ -348,6 +383,12 @@ Parameters: `name`, `compose` *required*; `dry_run`, `expected_sha256`, `timeout
 Delete an app. `confirm` must repeat the app name exactly. Returns a job ID.
 
 Parameters: `name`, `confirm` *required*; `remove_ix_volumes`, `dry_run`.
+
+`dry_run: true` describes the deletion without calling `app.delete`.
+Absent/null means false. A present value must be a JSON boolean: string
+booleans, empty strings, numbers, arrays and objects are refused before any
+Appliance call, including the existence check. The exact-name `confirm`
+check still applies to previews and writes.
 
 ## Destructive tools
 

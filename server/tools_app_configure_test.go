@@ -70,14 +70,14 @@ func TestAppConfigure_DeepMergesAndStripsReserved(t *testing.T) {
 
 	// Siblings of the changed leaves must survive: this is the whole point.
 	web := values["network"].(map[string]any)["web_port"].(map[string]any)
-	if web["port_number"] != float64(30991) || web["bind_mode"] != "published" {
+	if web["port_number"] != json.Number("30991") || web["bind_mode"] != "published" {
 		t.Errorf("web_port merged wrong: %v", web)
 	}
 	if values["network"].(map[string]any)["host_network"] != false {
 		t.Errorf("network.host_network lost: %v", values["network"])
 	}
 	limits := values["resources"].(map[string]any)["limits"].(map[string]any)
-	if limits["cpus"] != float64(1) || limits["memory"] != float64(4096) {
+	if limits["cpus"] != json.Number("1") || limits["memory"] != json.Number("4096") {
 		t.Errorf("resources.limits merged wrong: %v", limits)
 	}
 	if values["TZ"] != "America/New_York" {
@@ -115,6 +115,80 @@ func TestAppConfigure_ListsReplaceWhole(t *testing.T) {
 	envs := values["it_tools"].(map[string]any)["additional_envs"].([]any)
 	if len(envs) != 0 {
 		t.Errorf("list should be replaced, got %v", envs)
+	}
+}
+
+func TestAppConfigure_DryRunRejectsMalformedValues(t *testing.T) {
+	for _, value := range []any{"", "true", "false", 0, 1, []any{}, []any{true}, map[string]any{}} {
+		t.Run(fmt.Sprintf("%T/%v", value, value), func(t *testing.T) {
+			calls := 0
+			mock := &mockCaller{CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+				calls++
+				return nil, fmt.Errorf("unexpected middleware call %q", method)
+			}}
+			result, err := callTool(t, mock, false, "truenas_app_configure", map[string]any{
+				"name": "it-tools", "values": map[string]any{"TZ": "UTC"}, "dry_run": value,
+			})
+			if calls != 0 {
+				t.Errorf("middleware calls = %d, want 0", calls)
+			}
+			if err == nil && (result == nil || !result.IsError) {
+				t.Fatal("expected malformed dry_run error")
+			}
+			msg := ""
+			if err != nil {
+				msg = err.Error()
+			} else {
+				msg = resultText(t, result)
+			}
+			if !strings.Contains(msg, `"dry_run" must be a boolean`) {
+				t.Errorf("error = %q, want dry_run boolean validation", msg)
+			}
+		})
+	}
+}
+
+func TestAppConfigure_DryRunBooleanSemantics(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		present bool
+		value   any
+		dryRun  bool
+	}{
+		{name: "absent"},
+		{name: "null", present: true},
+		{name: "false", present: true, value: false},
+		{name: "true", present: true, value: true, dryRun: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mock, updates := configureMock(t, false)
+			args := map[string]any{"name": "it-tools", "values": map[string]any{"TZ": "UTC"}}
+			if tc.present {
+				args["dry_run"] = tc.value
+			}
+			result, err := callTool(t, mock, false, "truenas_app_configure", args)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.IsError {
+				t.Fatalf("tool error: %s", resultText(t, result))
+			}
+			wantUpdates := 1
+			if tc.dryRun {
+				wantUpdates = 0
+			}
+			if len(*updates) != wantUpdates {
+				t.Errorf("app.update calls = %d, want %d", len(*updates), wantUpdates)
+			}
+			got := decodeObject(t, resultText(t, result))
+			if tc.dryRun {
+				if got["dry_run"] != true || got["job_id"] != nil {
+					t.Errorf("dry run result = %v", got)
+				}
+			} else if got["job_id"] != float64(4242) {
+				t.Errorf("job_id = %v, want 4242", got["job_id"])
+			}
+		})
 	}
 }
 

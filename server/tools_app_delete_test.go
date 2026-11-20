@@ -89,6 +89,80 @@ func decodeObject(t *testing.T, text string) map[string]any {
 	return got
 }
 
+func TestAppDelete_DryRunRejectsMalformedValues(t *testing.T) {
+	for _, value := range []any{"", "true", "false", 0, 1, []any{}, []any{true}, map[string]any{}} {
+		t.Run(fmt.Sprintf("%T/%v", value, value), func(t *testing.T) {
+			calls := 0
+			mock := &mockCaller{CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+				calls++
+				return nil, fmt.Errorf("unexpected middleware call %q", method)
+			}}
+			result, err := callTool(t, mock, false, "truenas_app_delete", map[string]any{
+				"name": "plex", "confirm": "plex", "dry_run": value,
+			})
+			if calls != 0 {
+				t.Errorf("middleware calls = %d, want 0", calls)
+			}
+			if err == nil && (result == nil || !result.IsError) {
+				t.Fatal("expected malformed dry_run error")
+			}
+			msg := ""
+			if err != nil {
+				msg = err.Error()
+			} else {
+				msg = resultText(t, result)
+			}
+			if !strings.Contains(msg, `"dry_run" must be a boolean`) {
+				t.Errorf("error = %q, want dry_run boolean validation", msg)
+			}
+		})
+	}
+}
+
+func TestAppDelete_DryRunBooleanSemantics(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		present bool
+		value   any
+		dryRun  bool
+	}{
+		{name: "absent"},
+		{name: "null", present: true},
+		{name: "false", present: true, value: false},
+		{name: "true", present: true, value: true, dryRun: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mock, calls := deleteMock(t, true)
+			args := map[string]any{"name": "plex", "confirm": "plex"}
+			if tc.present {
+				args["dry_run"] = tc.value
+			}
+			result, err := callTool(t, mock, false, "truenas_app_delete", args)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.IsError {
+				t.Fatalf("tool error: %s", resultText(t, result))
+			}
+			wantDeletes := 1
+			if tc.dryRun {
+				wantDeletes = 0
+			}
+			if calls.queries != 1 || len(calls.deletes) != wantDeletes {
+				t.Errorf("queries = %d, deletes = %d, want 1 and %d", calls.queries, len(calls.deletes), wantDeletes)
+			}
+			got := decodeObject(t, resultText(t, result))
+			if tc.dryRun {
+				if got["dry_run"] != true || got["job_id"] != nil {
+					t.Errorf("dry run result = %v", got)
+				}
+			} else if got["job_id"] != float64(777) {
+				t.Errorf("job_id = %v, want 777", got["job_id"])
+			}
+		})
+	}
+}
+
 func TestAppDelete_DryRun(t *testing.T) {
 	mock, calls := deleteMock(t, true)
 	result, err := callTool(t, mock, false, "truenas_app_delete", map[string]any{

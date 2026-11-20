@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-19",
+  "scope": "server/app",
+  "correction": "Preserve exact configuration number tokens with UseNumber and compare numeric values by bounded decimal normalization, including nested arrays; keep the global argument rejection guard.",
+  "evidence": "Issue review finding: https://github.com/bketelsen/truenas-mcp/issues/81",
+  "promoted_to": "server/tools_app_configure_numbers_test.go"
+}

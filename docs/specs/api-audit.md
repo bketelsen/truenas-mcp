@@ -45,10 +45,10 @@ one up in `core.get_methods` (keys are method names; each value has `accepts`, `
 | `zfs.snapshot.query/create/delete` | legacy fallback in `callSnapshot` | **removed** | same as above | Handled by PR #41 (pre-25.10 fallback only) |
 | `sharing.smb.query` | `truenas_smb_list` | present | none | OK (live) |
 | `sharing.smb.create` | `truenas_smb_create` | present | `name`, `path`, `comment`, `guest_ok` | **Gap 2** (fixed): top-level `guestok` rejected |
-| `sharing.smb.delete` | `truenas_smb_delete` | present | `id` integer | OK (schema) |
+| `sharing.smb.delete` | `truenas_smb_delete` | present | `id` integer, now forwarded exactly as int64 from a literal | OK (previous schema check); exact conversion checked offline on 2026-11-19, not live |
 | `sharing.nfs.query` | `truenas_nfs_list` | present | none | OK (live) |
-| `sharing.nfs.create` | `truenas_nfs_create` | present | `path`, `hosts`, `networks` | OK (schema) |
-| `sharing.nfs.delete` | `truenas_nfs_delete` | present | `id` integer | OK (schema) |
+| `sharing.nfs.create` | `truenas_nfs_create` | present | `path`; `hosts` and `networks` only when valid nonempty string arrays | OK (previous schema check); restriction validation and omission checked offline on 2026-11-19, not live |
+| `sharing.nfs.delete` | `truenas_nfs_delete` | present | `id` integer, now forwarded exactly as int64 from a literal | OK (previous schema check); exact conversion checked offline on 2026-11-19, not live |
 | `alert.list` | `truenas_alert_list`, `truenas_health_report` | present | none | **Gap 1** (fixed): accepts no arguments |
 | `alert.dismiss` | `truenas_alert_dismiss` | present | `uuid` string | OK (schema) |
 | `app.query` | `truenas_app_list`, `truenas_app_get`, `truenas_apps_update_report`, `truenas_app_update`, `truenas_app_update_all`, `truenas_app_configure`, `truenas_app_compose_update`, `truenas_app_delete` | present | filters `name =` / `upgrade_available =` | OK (live); returned fields used by the report all present |
@@ -56,7 +56,7 @@ one up in `core.get_methods` (keys are method names; each value has `accepts`, `
 | `app.start` | `truenas_app_start` | present (job) | `app_name` | OK (schema) |
 | `app.stop` | `truenas_app_stop` | present (job) | `app_name` | OK (schema) |
 | `app.redeploy` | `truenas_app_restart` | present (job) | `app_name` | OK (schema) |
-| `app.update` | `truenas_app_configure` (with `{values}`), `truenas_app_compose_update` (with `{custom_compose_config}`) | present (job) | `app_name`, `{values}` or `{custom_compose_config}` | OK (schema) |
+| `app.update` | `truenas_app_configure` (with `{values}`), `truenas_app_compose_update` (with `{custom_compose_config}`) | present (job) | `app_name`, `{values}` (configuration number tokens preserved) or `{custom_compose_config}` | OK (previous schema check); catalog configuration numeric preservation checked offline on 2026-11-19, not live |
 | `app.upgrade` | `truenas_app_update`, `truenas_app_update_all` | present (job) | `app_version`, `values`, `snapshot_hostpaths` | OK (schema) |
 | `core.get_jobs` | `truenas_jobs_list`, `truenas_app_compose_update` and `truenas_snapshot_task_run` (poll loop `waitForJob`) | present | filters, `order_by`, `limit`; the poll uses the filter `id =` | OK (live) |
 | `pool.snapshottask.query` | `truenas_snapshot_task_list`, `truenas_snapshot_task_create`, `truenas_snapshot_task_run`, `truenas_replication_task_create` (every task, on a dry run too), `truenas_protection_report` (every task) | present | none, or filter `dataset =`; the run tool uses filter `id =` (before the run and in its state poll); the replication task create tool and the protection report use no parameters | OK (schema + middleware source, not called live) |
@@ -80,6 +80,34 @@ The 4 rows from `pool.snapshottask.query` to `app.delete` (`pool.snapshottask.qu
 The last 2 rows were added for `truenas_protection_report` (2026-11-02). They were called live, read-only, on 27.0.0-RC.1 by a build of the tool without `--enable-writes`, together with `pool.snapshottask.query`, `replication.query` and `pool.snapshot.query` (no filter, `extra.properties` [`creation`]): 114 datasets, about 33,000 characters, in about 1 second. The dataset options follow `pool.dataset.query` in `plugins/pool_/dataset.py` (master); the tool walks nested `children` too, so a release that ignores `flat` or `select` still works.
 
 The `replication.create` row, and the `id in` dataset lookup of `truenas_replication_task_create`, were added after the audit, for the local replication task create tool. They were checked against the middleware source TS-27.0.0-RC.1 (`api/v27_0_0/replication.py` `ReplicationCreate`, `plugins/replication.py` for the role and its `_validate_source_datasets`) and the `v25_10_0` model, not against a live NAS: `replication.create` writes, so it was never called.
+
+## Offline safety regression checks (2026-11-19)
+
+These checks exercise the Server with `mockCaller` and a real in-memory MCP
+client. They do not connect to an Appliance, call live middleware, or renew
+the live audit date above. Payload serialization is checked locally, not
+accepted by a live Appliance. The [tool contract](tools.md) and
+[design helper map](../design/overview.md#schema-and-parameter-helpers) record
+the implementation scope.
+
+| Review finding | Offline check and scope |
+| --- | --- |
+| [#78](https://github.com/bketelsen/truenas-mcp/issues/78) | `server/tools_app_delete_test.go` and `server/tools_app_configure_test.go`: strict `dry_run`, absent/null/true/false behavior, malformed inputs make zero middleware calls (not even `app.query`). Existing confirmation and read-only registration checks remain. |
+| [#79](https://github.com/bketelsen/truenas-mcp/issues/79) | `server/tools_share_test.go`: NFS `hosts`/`networks` reject non-arrays and mixed arrays before calls; absent/null/empty arrays omit the field; nonempty string arrays pass unchanged. |
+| [#80](https://github.com/bketelsen/truenas-mcp/issues/80) | `server/tools_share_delete_test.go`: both share delete Tools forward exact signed int64 integer literals and reject decimal/exponent notation, wrong types and overflow. The endpoints `-9223372036854775808` and `9223372036854775807` are conversion bounds of the Server, not an assertion that those IDs are valid on the Appliance. |
+| [#81](https://github.com/bketelsen/truenas-mcp/issues/81) | `server/tools_app_configure_numbers_test.go` and `server/app_config_json_test.go`: configuration-only lossless object decoding, exact preview/update number tokens, unchanged large siblings, semantic numeric no-ops (also in arrays), bounded exponent normalization, and rejection of null/malformed/trailing stored configuration. |
+
+The global `decodeArguments` / `rejectUndecodableArguments` guard is unchanged.
+`server/arguments_test.go` and the configuration regression tests still reject
+incoming `1e309`, including an earlier duplicate-key value followed by a
+valid value, before any middleware call. Reading raw share IDs or rereading
+configuration `values` with `UseNumber()` does not bypass this guard. No new
+live compatibility claim is made for these changes.
+
+The first-contact path finding
+([#77](https://github.com/bketelsen/truenas-mcp/issues/77)) is a local launch
+configuration issue, not a middleware method change. Its offline Node guard
+uses a stubbed build command; see the [first-contact guide](../first-contact.md).
 
 ## Gaps and fixes
 

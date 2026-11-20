@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strconv"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -102,6 +103,23 @@ func requireFloat64(req *mcp.CallToolRequest, field string) (float64, error) {
 		return 0, fmt.Errorf("required parameter %q missing", field)
 	}
 	return v, nil
+}
+
+// requireShareID reads a share deletion ID from raw JSON, without the float64
+// rounding in parseArgs. Only integer literals are supported: decimal points and
+// exponent notation are refused even when their numeric value is an integer.
+// The signed int64 range is the Server's conversion bound, not a statement about
+// which IDs the Appliance accepts.
+func requireShareID(req *mcp.CallToolRequest) (int64, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(req.Params.Arguments, &fields); err != nil {
+		return 0, fmt.Errorf("reading share ID arguments: %w", err)
+	}
+	id, err := strconv.ParseInt(string(bytes.TrimSpace(fields["id"])), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parameter %q must be a JSON integer literal in the signed int64 range (no decimal point or exponent): %w", "id", err)
+	}
+	return id, nil
 }
 
 func optionalFloat64(req *mcp.CallToolRequest, field string) (float64, bool) {

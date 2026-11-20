@@ -28,7 +28,18 @@ export TRUENAS_API_KEY
 scripts/first-contact.sh
 ```
 
-The script requires `make`, `go`, and `python3`. It does not contact TrueNAS unless you pass `--run-server`. Do not run it with shell tracing (`bash -x`) because tracing can expose secrets.
+The script requires `make`, `go`, and `python3`. It builds `build/truenas-mcp`
+and prints that binary's absolute clone path in both the command shape and
+the generated MCP client JSON. It does not contact TrueNAS unless you pass
+`--run-server`, which executes the same binary. The generated JSON uses the
+placeholder `YOUR_API_KEY`, never the supplied key. Do not run it with shell
+tracing (`bash -x`) because tracing can expose secrets.
+
+The offline guard `test/first-contact.test.mjs`, included in
+`make verify-template`, executes the planning path with a stubbed `make`,
+compares the generated command with the Makefile build output and checks
+that a dummy key is not printed. It does not build or start the Server.
+See the [design and test map](design/overview.md#ci).
 
 ## Environment
 
@@ -61,11 +72,17 @@ scripts/first-contact.sh --run-server
 
 ## Claude MCP Configuration
 
+For a local clone, replace `/absolute/path/to/clone` below with the clone's
+absolute directory. The executable is inside `build/`, not at the clone root.
+For an installed binary, use its installed absolute path instead. The
+[user first-connection guide](../site/content/getting-started/first-connection.md)
+has the same launch steps.
+
 ```json
 {
   "mcpServers": {
     "truenas": {
-      "command": "/absolute/path/to/truenas-mcp",
+      "command": "/absolute/path/to/clone/build/truenas-mcp",
       "args": ["serve", "--host", "truenas.local", "--api-key", "YOUR_API_KEY"]
     }
   }
@@ -78,7 +95,7 @@ For self-signed certificates, add `--tls-insecure` only if needed:
 {
   "mcpServers": {
     "truenas": {
-      "command": "/absolute/path/to/truenas-mcp",
+      "command": "/absolute/path/to/clone/build/truenas-mcp",
       "args": ["serve", "--host", "truenas.local", "--api-key", "YOUR_API_KEY", "--tls-insecure"]
     }
   }

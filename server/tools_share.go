@@ -3,11 +3,23 @@ package server
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"truenas-mcp/truenas"
 )
+
+// shareIDProp describes the Server's lossless conversion range. The Appliance
+// decides whether a representable ID identifies a valid share.
+func shareIDProp(desc string) map[string]any {
+	return map[string]any{
+		"type":        "integer",
+		"minimum":     int64(math.MinInt64),
+		"maximum":     int64(math.MaxInt64),
+		"description": desc + "; use a JSON integer literal without a decimal point or exponent. The signed int64 bounds are the Server's conversion range, not the Appliance's valid ID range",
+	}
+}
 
 func registerShareReadTools(s *mcp.Server, client truenas.Caller) {
 	s.AddTool(&mcp.Tool{
@@ -90,7 +102,7 @@ func registerShareWriteTools(s *mcp.Server, client truenas.Caller) {
 		Name:        "truenas_smb_delete",
 		Description: "Delete an SMB share by ID.",
 		InputSchema: schema(map[string]any{
-			"id": numberProp("share ID to delete"),
+			"id": shareIDProp("share ID to delete"),
 		}, "id"),
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Delete SMB Share",
@@ -100,11 +112,11 @@ func registerShareWriteTools(s *mcp.Server, client truenas.Caller) {
 			OpenWorldHint:   new(false),
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		id, err := requireFloat64(req, "id")
+		id, err := requireShareID(req)
 		if err != nil {
 			return nil, err
 		}
-		result, err := client.Call("sharing.smb.delete", int(id))
+		result, err := client.Call("sharing.smb.delete", id)
 		if err != nil {
 			return nil, fmt.Errorf("sharing.smb.delete: %w", err)
 		}
@@ -131,11 +143,19 @@ func registerShareWriteTools(s *mcp.Server, client truenas.Caller) {
 		if err != nil {
 			return nil, err
 		}
+		networks, err := strictStringList(req, "networks")
+		if err != nil {
+			return nil, err
+		}
+		hosts, err := strictStringList(req, "hosts")
+		if err != nil {
+			return nil, err
+		}
 		params := map[string]any{"path": path}
-		if networks := optionalSlice(req, "networks"); len(networks) > 0 {
+		if len(networks) > 0 {
 			params["networks"] = networks
 		}
-		if hosts := optionalSlice(req, "hosts"); len(hosts) > 0 {
+		if len(hosts) > 0 {
 			params["hosts"] = hosts
 		}
 		result, err := client.Call("sharing.nfs.create", params)
@@ -149,7 +169,7 @@ func registerShareWriteTools(s *mcp.Server, client truenas.Caller) {
 		Name:        "truenas_nfs_delete",
 		Description: "Delete an NFS export by ID.",
 		InputSchema: schema(map[string]any{
-			"id": numberProp("export ID to delete"),
+			"id": shareIDProp("export ID to delete"),
 		}, "id"),
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Delete NFS Export",
@@ -159,11 +179,11 @@ func registerShareWriteTools(s *mcp.Server, client truenas.Caller) {
 			OpenWorldHint:   new(false),
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		id, err := requireFloat64(req, "id")
+		id, err := requireShareID(req)
 		if err != nil {
 			return nil, err
 		}
-		result, err := client.Call("sharing.nfs.delete", int(id))
+		result, err := client.Call("sharing.nfs.delete", id)
 		if err != nil {
 			return nil, fmt.Errorf("sharing.nfs.delete: %w", err)
 		}
