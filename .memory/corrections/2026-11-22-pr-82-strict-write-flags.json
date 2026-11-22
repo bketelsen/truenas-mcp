@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-22",
+  "scope": "server/write-flags",
+  "correction": "Read app delete remove_ix_volumes and SMB create guest_ok with strictBool and default false: omitted/null stays false, while non-boolean values are refused before any middleware call, including app.query, rather than silently selecting the default.",
+  "evidence": "https://github.com/bketelsen/truenas-mcp/pull/82#issuecomment-7026778567; https://github.com/bketelsen/truenas-mcp/issues/84",
+  "promoted_to": "docs/specs/tools.md"
+}

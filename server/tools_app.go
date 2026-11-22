@@ -396,7 +396,10 @@ func registerAppWriteTools(s *mcp.Server, client truenas.Caller) {
 		if confirm != name {
 			return nil, fmt.Errorf("parameter %q must equal the app name %q exactly (case-sensitive); nothing was deleted", "confirm", name)
 		}
-		removeIxVolumes := optionalBool(req, "remove_ix_volumes")
+		removeIxVolumes, err := strictBool(req, "remove_ix_volumes", false)
+		if err != nil {
+			return nil, err
+		}
 		dryRun, err := strictBool(req, "dry_run", false)
 		if err != nil {
 			return nil, err

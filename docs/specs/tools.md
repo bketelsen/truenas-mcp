@@ -311,8 +311,9 @@ Create an SMB share.
   - `path` (string, required) — filesystem path (e.g., `/mnt/tank/data`)
   - `comment` (string, optional) — description
   - `guest_ok` (boolean, optional) — allow guest access (default false); on TrueNAS 25.10 and later this creates a `LEGACY_SHARE` share, the only purpose that allows guests
-- API: `sharing.smb.create` with `name`, `path`, and optional `comment`. Without `guest_ok` this payload is sent unchanged.
-  With `guest_ok` the tool adds `purpose: "LEGACY_SHARE"` and `options: {"guestok": true}`. If the server
+- `guest_ok` uses `strictBool(req, "guest_ok", false)`: omitted/null means false; otherwise only JSON booleans are accepted. Strings (including `"false"` and `"true"`), numbers, arrays and objects produce `parameter "guest_ok" must be a boolean, got <type>` before any middleware call.
+- API: `sharing.smb.create` with `name`, `path`, and optional `comment`. With `guest_ok` omitted, null or false this payload is sent unchanged.
+  With `guest_ok: true` the tool adds `purpose: "LEGACY_SHARE"` and `options: {"guestok": true}`. If the server
   rejects that payload in validation (`EINVAL` naming `sharing_smb_create.purpose` or
   `sharing_smb_create.options`, as releases before 25.10 do), the tool retries once with the legacy
   top-level `guestok: true` and no `purpose` or `options`. A validation error
@@ -435,7 +436,7 @@ Delete an installed app and return the job ID. Destructive and irreversible.
   - `confirm` (string, required) — type the app name again to confirm deletion; must equal `name` exactly (case-sensitive, no trimming)
   - `remove_ix_volumes` (boolean, optional, default false) — also destroy the app's ix-volumes dataset (TrueNAS-managed storage) recursively, with its snapshots. Host paths are never removed
   - `dry_run` (boolean, optional, default false) — check and describe; do not delete
-- `dry_run` uses `strictBool(req, "dry_run", false)`: absent/null means false; only JSON booleans are accepted when present. Strings (including `""`, `"true"` and `"false"`), numbers, arrays and objects are errors before any middleware call, including `app.query`. The exact-name `confirm` check remains mandatory on previews and writes.
+- `remove_ix_volumes` and `dry_run` each use `strictBool(req, field, false)`: omitted/null means false; otherwise only JSON booleans are accepted. Strings (including `""`, `"true"` and `"false"`), numbers, arrays and objects produce the field-specific `parameter "<field>" must be a boolean, got <type>` error before any middleware call, including `app.query`. The exact-name `confirm` check remains mandatory on previews and writes.
 - API: `app.query` with filter `[["name", "=", name]]` (existence check, also on dry runs), then `app.delete(name, options)`. This is a TrueNAS job; the result is the job ID.
 - Steps: (1) `confirm != name` is an error and makes NO middleware call; (2) no app match is the error `app "<name>" not found`; (3) options are built explicitly with all 3 keys: `{"remove_images": true, "remove_ix_volumes": <flag>, "force_remove_custom_app": false}` (`AppDelete` model; the middleware defaults are true/false/false, but the tool never relies on them); (4) with `dry_run`, `app.delete` is NOT called.
 - Returns: `{ "name", "job_id", "remove_ix_volumes" }`; with `dry_run`: `{ "dry_run": true, "name", "method": "app.delete", "options", "app": {"state", "version", "custom_app"}, "effects": [...] }`
