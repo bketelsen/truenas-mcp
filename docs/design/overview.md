@@ -238,6 +238,15 @@ the value is mathematically an integer.
 
 `optionalBool()` returns false for an absent key, and both `optionalBool()` and `optionalSlice()` drop a value of the wrong type silently. The SDK does not validate arguments against `InputSchema`, so a new write tool should use `strictBool()` and `strictStringList()` for any argument whose default would change the effect of the call (`truenas_snapshot_task_create` needs this for `dry_run`, `enabled`, `allow_empty`, `recursive`, and `exclude`). A JSON `null` counts as absent in both helpers.
 
+App delete reads `remove_ix_volumes` and SMB create reads `guest_ok` with
+`strictBool(req, field, false)`. Omitted/null means false; otherwise only JSON
+booleans are accepted. Strings, numbers, arrays and objects produce the
+field-specific `parameter "<field>" must be a boolean` error before any
+middleware call, including app delete's `app.query`. App delete still requires
+an exact-name `confirm` for previews and writes. SMB guest access still uses
+`LEGACY_SHARE` with the validation-only legacy fallback described in the
+[SMB create contract](../specs/tools.md#truenas_smb_create-write).
+
 App delete and configure read `dry_run` with `strictBool(req, "dry_run", false)`
 before any middleware call. Absent/null means false; malformed strings
 (including empty), numbers, arrays and objects are refused. NFS create reads

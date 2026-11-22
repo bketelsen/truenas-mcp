@@ -520,3 +520,80 @@ func TestNFSDelete_MissingID(t *testing.T) {
 		t.Error("expected error for missing id")
 	}
 }
+
+func TestSMBCreate_GuestOKFlag(t *testing.T) {
+	for _, value := range []any{"false", "true", 1, []any{}, map[string]any{}} {
+		t.Run(fmt.Sprintf("invalid/%T/%v", value, value), func(t *testing.T) {
+			calls := 0
+			mock := &mockCaller{CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+				calls++
+				return nil, fmt.Errorf("unexpected middleware call %q", method)
+			}}
+			result, err := callTool(t, mock, false, "truenas_smb_create", map[string]any{
+				"name": "myshare", "path": "/mnt/tank/data", "guest_ok": value,
+			})
+			if calls != 0 {
+				t.Errorf("middleware calls = %d, want 0", calls)
+			}
+			msg := ""
+			if err != nil {
+				msg = err.Error()
+			} else if result != nil && result.IsError {
+				msg = resultText(t, result)
+			} else {
+				t.Error("expected malformed guest_ok tool error")
+			}
+			if !strings.Contains(msg, `"guest_ok" must be a boolean`) {
+				t.Errorf("error = %q, want guest_ok boolean validation", msg)
+			}
+		})
+	}
+	for _, tc := range []struct {
+		name    string
+		present bool
+		value   any
+		guest   bool
+	}{
+		{name: "omitted"},
+		{name: "null", present: true},
+		{name: "false", present: true, value: false},
+		{name: "true", present: true, value: true, guest: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			want := map[string]any{"name": "myshare", "path": "/mnt/tank/data"}
+			if tc.guest {
+				want["purpose"] = "LEGACY_SHARE"
+				want["options"] = map[string]any{"guestok": true}
+			}
+			mock := &mockCaller{CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+				calls++
+				if method != "sharing.smb.create" {
+					t.Errorf("method = %q, want sharing.smb.create", method)
+				}
+				if len(params) != 1 || !reflect.DeepEqual(params[0], want) {
+					t.Errorf("params = %v, want [%v]", params, want)
+				}
+				return json.RawMessage(`{"id":1,"name":"myshare"}`), nil
+			}}
+			args := map[string]any{"name": "myshare", "path": "/mnt/tank/data"}
+			if tc.present {
+				args["guest_ok"] = tc.value
+			}
+			result, err := callTool(t, mock, false, "truenas_smb_create", args)
+			if calls != 1 {
+				t.Errorf("middleware calls = %d, want 1", calls)
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.IsError {
+				t.Fatalf("tool error: %s", resultText(t, result))
+			}
+			got := decodeObject(t, resultText(t, result))
+			if got["id"] != float64(1) || got["name"] != "myshare" {
+				t.Errorf("result = %v, want share id 1 and name myshare", got)
+			}
+		})
+	}
+}

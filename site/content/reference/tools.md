@@ -225,6 +225,16 @@ Create an SMB share. `guest_ok` allows guest access.
 
 Parameters: `name`, `path` *required*; `comment`, `guest_ok`.
 
+`guest_ok` defaults to false when omitted or null. Otherwise it accepts only
+JSON booleans: strings, numbers, arrays and objects produce a field-specific
+`parameter "guest_ok" must be a boolean` error before any middleware call.
+False leaves guest settings out of the payload. True sends
+`purpose: "LEGACY_SHARE"` and `options: {"guestok": true}`. On an `EINVAL`
+validation error naming `sharing_smb_create.purpose` or
+`sharing_smb_create.options`, the Server retries once with legacy top-level
+`guestok: true` and no `purpose` or `options`. Other errors do not trigger
+this fallback.
+
 ### `truenas_smb_delete`
 
 **Write tool.** Registered only with `--enable-writes`.
@@ -384,11 +394,15 @@ Delete an app. `confirm` must repeat the app name exactly. Returns a job ID.
 
 Parameters: `name`, `confirm` *required*; `remove_ix_volumes`, `dry_run`.
 
-`dry_run: true` describes the deletion without calling `app.delete`.
-Absent/null means false. A present value must be a JSON boolean: string
-booleans, empty strings, numbers, arrays and objects are refused before any
-Appliance call, including the existence check. The exact-name `confirm`
-check still applies to previews and writes.
+`remove_ix_volumes` and `dry_run` default to false when omitted or null.
+Otherwise they accept only JSON booleans: string booleans, empty strings,
+numbers, arrays and objects produce a field-specific
+`parameter "<field>" must be a boolean` error before any middleware call,
+including the `app.query` existence check. `remove_ix_volumes: true` also
+destroys the app's ix-volumes and their snapshots; false keeps them. Host
+paths are never removed. `dry_run: true` describes the deletion without
+calling `app.delete`. The exact-name `confirm` check still applies to previews
+and writes.
 
 ## Destructive tools
 

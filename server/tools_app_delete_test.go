@@ -344,3 +344,75 @@ func TestDataProtectionToolsRegisteredReadOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestAppDelete_RemoveIxVolumesFlag(t *testing.T) {
+	for _, value := range []any{"false", "true", 1, []any{}, map[string]any{}} {
+		t.Run(fmt.Sprintf("invalid/%T/%v", value, value), func(t *testing.T) {
+			calls := 0
+			mock := &mockCaller{CallFunc: func(method string, params ...interface{}) (json.RawMessage, error) {
+				calls++
+				return nil, fmt.Errorf("unexpected middleware call %q", method)
+			}}
+			result, err := callTool(t, mock, false, "truenas_app_delete", map[string]any{
+				"name": "plex", "confirm": "plex", "remove_ix_volumes": value,
+			})
+			if calls != 0 {
+				t.Errorf("middleware calls = %d, want 0 (including app.query)", calls)
+			}
+			msg := ""
+			if err != nil {
+				msg = err.Error()
+			} else if result != nil && result.IsError {
+				msg = resultText(t, result)
+			} else {
+				t.Error("expected malformed remove_ix_volumes tool error")
+			}
+			if !strings.Contains(msg, `"remove_ix_volumes" must be a boolean`) {
+				t.Errorf("error = %q, want remove_ix_volumes boolean validation", msg)
+			}
+		})
+	}
+	for _, tc := range []struct {
+		name    string
+		present bool
+		value   any
+		want    bool
+	}{
+		{name: "omitted"},
+		{name: "null", present: true},
+		{name: "false", present: true, value: false},
+		{name: "true", present: true, value: true, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mock, calls := deleteMock(t, true)
+			args := map[string]any{"name": "plex", "confirm": "plex"}
+			if tc.present {
+				args["remove_ix_volumes"] = tc.value
+			}
+			result, err := callTool(t, mock, false, "truenas_app_delete", args)
+			if calls.queries != 1 || len(calls.deletes) != 1 {
+				t.Errorf("queries = %d, deletes = %d, want 1 each", calls.queries, len(calls.deletes))
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.IsError {
+				t.Fatalf("tool error: %s", resultText(t, result))
+			}
+			if len(calls.deletes) == 1 {
+				params := calls.deletes[0]
+				if len(params) != 2 || params[0] != "plex" {
+					t.Fatalf("app.delete params = %v, want [plex options]", params)
+				}
+				opts, ok := params[1].(map[string]any)
+				if !ok || len(opts) != 3 || opts["remove_ix_volumes"] != tc.want || opts["remove_images"] != true || opts["force_remove_custom_app"] != false {
+					t.Errorf("options = %v, want remove_ix_volumes %v and unchanged other options", params[1], tc.want)
+				}
+			}
+			got := decodeObject(t, resultText(t, result))
+			if got["name"] != "plex" || got["job_id"] != float64(777) || got["remove_ix_volumes"] != tc.want {
+				t.Errorf("result = %v, want plex, job 777, remove_ix_volumes %v", got, tc.want)
+			}
+		})
+	}
+}

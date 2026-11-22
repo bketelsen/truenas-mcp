@@ -84,11 +84,15 @@ func registerShareWriteTools(s *mcp.Server, client truenas.Caller) {
 		if err != nil {
 			return nil, err
 		}
+		guestOK, err := strictBool(req, "guest_ok", false)
+		if err != nil {
+			return nil, err
+		}
 		params := map[string]any{"name": name, "path": path}
 		if comment := optionalString(req, "comment"); comment != "" {
 			params["comment"] = comment
 		}
-		if optionalBool(req, "guest_ok") {
+		if guestOK {
 			return smbCreateWithGuest(client, params)
 		}
 		result, err := client.Call("sharing.smb.create", params)
