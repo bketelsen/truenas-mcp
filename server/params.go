@@ -112,10 +112,16 @@ func requireFloat64(req *mcp.CallToolRequest, field string) (float64, error) {
 // which IDs the Appliance accepts.
 func requireShareID(req *mcp.CallToolRequest) (int64, error) {
 	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(req.Params.Arguments, &fields); err != nil {
-		return 0, fmt.Errorf("reading share ID arguments: %w", err)
+	if args := req.Params.Arguments; len(args) != 0 {
+		if err := json.Unmarshal(args, &fields); err != nil {
+			return 0, fmt.Errorf("reading share ID arguments: %w", err)
+		}
 	}
-	id, err := strconv.ParseInt(string(bytes.TrimSpace(fields["id"])), 10, 64)
+	rawID := bytes.TrimSpace(fields["id"])
+	if len(rawID) == 0 || bytes.Equal(rawID, []byte("null")) {
+		return 0, fmt.Errorf("required parameter %q missing", "id")
+	}
+	id, err := strconv.ParseInt(string(rawID), 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("parameter %q must be a JSON integer literal in the signed int64 range (no decimal point or exponent): %w", "id", err)
 	}

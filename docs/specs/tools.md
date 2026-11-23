@@ -325,7 +325,7 @@ Create an SMB share.
 Delete an SMB share.
 - Parameters:
   - `id` (integer, required) — share ID as a JSON integer literal, from `-9223372036854775808` to `9223372036854775807` inclusive
-- Conversion: `requireShareID` reads the raw token and forwards an exact Go `int64`, never a rounded float64 or machine-sized `int`. These signed int64 bounds are the Server's conversion range, not a claim about valid Appliance IDs. Missing/null IDs, strings, booleans, arrays/objects, fractions, exponent notation (even `1e0`) and overflow are refused before any middleware call. `9007199254740993` is forwarded unchanged.
+- Conversion: `requireShareID` reads the raw token and forwards an exact Go `int64`, never a rounded float64 or machine-sized `int`. These signed int64 bounds are the Server's conversion range, not a claim about valid Appliance IDs. Missing/null IDs, strings, booleans, arrays/objects, fractions, exponent notation (even `1e0`) and overflow are refused before any middleware call. An omitted or null arguments object, an omitted `id`, and a null `id` all report `required parameter "id" missing`. `9007199254740993` is forwarded unchanged.
 - API: `sharing.smb.delete`
 
 ### `truenas_nfs_list`

@@ -214,7 +214,7 @@ Read-only mode is the default. The Server always registers 24 read-only Tools; w
 - `parseArgs()` — the decoded arguments for the accessors below; it has no error return, because the middleware has already refused arguments that do not decode
 - `requireString()`, `optionalString()`
 - `requireFloat64()`, `optionalFloat64()`
-- `requireShareID()` — for SMB/NFS deletion only: reads raw `id` as a JSON integer literal and parses directly to `int64`; refuses missing/null, non-numbers, decimal/exponent notation and overflow before any middleware call
+- `requireShareID()` — for SMB/NFS deletion only: reads raw `id` as a JSON integer literal and parses directly to `int64`; reports a missing required `id` for omitted/null arguments or an omitted/null field; refuses non-numbers, decimal/exponent notation and overflow before any middleware call
 - `optionalBool()`, `optionalSlice()`
 - `strictBool()`, `strictStringList()` — for tools that must refuse a present argument of the wrong type
 - `requireObject()` — returns a required JSON object argument as `map[string]any`, or an error when it is absent or not an object (used by `tools_data_protection.go`; the configuration tool uses the lossless decoder below)
