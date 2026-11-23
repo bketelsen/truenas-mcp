@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-23",
+  "scope": "server/shares",
+  "correction": "Treat omitted or null share-delete arguments and absent or null IDs as a missing required id, without masking malformed input or changing signed int64 parsing.",
+  "evidence": "https://github.com/bketelsen/truenas-mcp/issues/83 (PR #82 cross-review follow-up)",
+  "promoted_to": "server/tools_share_delete_test.go"
+}

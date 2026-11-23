@@ -1,12 +1,17 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
+	"net"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestShareDelete_ExactIntegerIDs(t *testing.T) {
@@ -50,6 +55,40 @@ func TestShareDelete_ExactIntegerIDs(t *testing.T) {
 	}
 }
 
+func TestShareDelete_MissingID(t *testing.T) {
+	for _, kind := range []string{"smb", "nfs"} {
+		for _, tc := range []struct {
+			name string
+			args string
+		}{
+			{"omitted arguments", ``},
+			{"null arguments", `,"arguments":null`},
+			{"empty object", `,"arguments":{}`},
+			{"null ID", `,"arguments":{"id":null}`},
+		} {
+			t.Run(kind+"/"+tc.name, func(t *testing.T) {
+				caller := &recordingCaller{}
+				// Send the literal request: ClientSession.CallTool would replace omitted arguments with {}.
+				request := openShareDeleteWire(t, caller)
+				var reply struct {
+					ID    int
+					Error struct{ Message string }
+				}
+				request(fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":%q%s}}`, "truenas_"+kind+"_delete", tc.args), &reply)
+				if reply.ID != 2 {
+					t.Errorf("response id = %d, want 2", reply.ID)
+				}
+				if got, want := reply.Error.Message, `required parameter "id" missing`; !strings.HasSuffix(got, want) {
+					t.Errorf("error = %q, want %q", got, want)
+				}
+				if calls := caller.recorded(); len(calls) != 0 {
+					t.Errorf("middleware calls = %v, want none", calls)
+				}
+			})
+		}
+	}
+}
+
 func TestShareDelete_RejectsInvalidIDs(t *testing.T) {
 	for _, kind := range []string{"smb", "nfs"} {
 		for _, tc := range []struct {
@@ -72,8 +111,6 @@ func TestShareDelete_RejectsInvalidIDs(t *testing.T) {
 			{"exponent underflows", `{"id":1e-999}`},
 			{"zero with large exponent", `{"id":0e999}`},
 			{"exponent overflows", `{"id":1e309}`},
-			{"missing", `{}`},
-			{"null", `{"id":null}`},
 			{"string", `{"id":"1"}`},
 			{"empty string", `{"id":""}`},
 			{"true", `{"id":true}`},
@@ -93,6 +130,88 @@ func TestShareDelete_RejectsInvalidIDs(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func openShareDeleteWire(t *testing.T, caller *recordingCaller) func(string, any) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	t.Cleanup(cancel)
+	client, pipe := net.Pipe()
+	t.Cleanup(func() { _ = client.Close() })
+	t.Cleanup(func() { _ = pipe.Close() })
+	deadline, _ := ctx.Deadline()
+	if err := client.SetDeadline(deadline); err != nil {
+		t.Fatal(err)
+	}
+
+	s := New(caller, false)
+	session, err := s.Connect(ctx, &mcp.IOTransport{Reader: pipe, Writer: pipe}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+
+	// Read from the transport directly, before an MCP client can decode schema
+	// numbers as float64 (which cannot represent MaxInt64).
+	dec := json.NewDecoder(client)
+	request := func(message string, reply any) {
+		t.Helper()
+		if _, err := fmt.Fprintln(client, message); err != nil {
+			t.Fatal(err)
+		}
+		if reply != nil {
+			if err := dec.Decode(reply); err != nil {
+				t.Fatalf("decode response to %s: %v", message, err)
+			}
+		}
+	}
+	var initialized struct {
+		Result json.RawMessage
+		Error  json.RawMessage
+	}
+	request(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"wire-test","version":"1"}}}`, &initialized)
+	if len(initialized.Result) == 0 || len(initialized.Error) != 0 {
+		t.Fatalf("initialize: result=%s error=%s", initialized.Result, initialized.Error)
+	}
+	request(`{"jsonrpc":"2.0","method":"notifications/initialized"}`, nil)
+	return request
+}
+
+func TestShareDelete_IDSchemaWireBounds(t *testing.T) {
+	request := openShareDeleteWire(t, &recordingCaller{})
+	var listed struct {
+		ID     int
+		Error  json.RawMessage
+		Result struct {
+			Tools []struct {
+				Name        string
+				InputSchema struct {
+					Properties map[string]struct {
+						Minimum json.RawMessage
+						Maximum json.RawMessage
+					}
+				}
+			}
+		}
+	}
+	request(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`, &listed)
+	if listed.ID != 2 || len(listed.Error) != 0 {
+		t.Fatalf("tools/list: id=%d error=%s", listed.ID, listed.Error)
+	}
+	for _, name := range []string{"truenas_smb_delete", "truenas_nfs_delete"} {
+		t.Run(name, func(t *testing.T) {
+			for _, tool := range listed.Result.Tools {
+				if tool.Name == name {
+					id := tool.InputSchema.Properties["id"]
+					if string(id.Minimum) != "-9223372036854775808" || string(id.Maximum) != "9223372036854775807" {
+						t.Errorf("wire bounds = [%s, %s], want [-9223372036854775808, 9223372036854775807]", id.Minimum, id.Maximum)
+					}
+					return
+				}
+			}
+			t.Fatal("tool missing from tools/list response")
+		})
 	}
 }
 

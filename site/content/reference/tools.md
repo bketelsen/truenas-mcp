@@ -246,7 +246,9 @@ Parameters: `id` *required*, a JSON integer literal from
 it exactly as signed int64, including IDs above `2**53`. These are conversion
 bounds, not a guarantee that an ID exists or is valid on the Appliance.
 Missing/null IDs, strings, fractions, exponent notation (even `1e0`), other
-non-numbers and overflow are refused before any Appliance call.
+non-numbers and overflow are refused before any Appliance call. If the
+arguments or the `id` are omitted or null, both share-delete Tools report
+`required parameter "id" missing`.
 
 ### `truenas_nfs_list`
 
