@@ -215,7 +215,7 @@ Read-only mode is the default. The Server always registers 24 read-only Tools; w
 - `requireString()`, `optionalString()`
 - `requireFloat64()`, `optionalFloat64()`
 - `requireShareID()` — for SMB/NFS deletion only: reads raw `id` as a JSON integer literal and parses directly to `int64`; reports a missing required `id` for omitted/null arguments or an omitted/null field; refuses non-numbers, decimal/exponent notation and overflow before any middleware call
-- `optionalBool()`, `optionalSlice()`
+- `optionalBool()`
 - `strictBool()`, `strictStringList()` — for tools that must refuse a present argument of the wrong type
 - `requireObject()` — returns a required JSON object argument as `map[string]any`, or an error when it is absent or not an object (used by `tools_data_protection.go`; the configuration tool uses the lossless decoder below)
 
@@ -236,7 +236,7 @@ the value is mathematically an integer.
 - `configValuesEqual()` — recursive object/array comparison with exact semantic equality for JSON numbers, including `1`, `1.0` and `1e0`; it never converts numbers to float64
 - `normalizedConfigNumber()` — normalizes a validated number to a signed coefficient and a decimal exponent held as `big.Int`. It never expands powers of 10; storage depends on token length rather than exponent magnitude
 
-`optionalBool()` returns false for an absent key, and both `optionalBool()` and `optionalSlice()` drop a value of the wrong type silently. The SDK does not validate arguments against `InputSchema`, so a new write tool should use `strictBool()` and `strictStringList()` for any argument whose default would change the effect of the call (`truenas_snapshot_task_create` needs this for `dry_run`, `enabled`, `allow_empty`, `recursive`, and `exclude`). A JSON `null` counts as absent in both helpers.
+`optionalBool()` returns false for an absent key or a value that is not a boolean. The SDK does not validate arguments against `InputSchema`, so a new write tool should use `strictBool()` and `strictStringList()` for any argument whose default would change the effect of the call (`truenas_snapshot_task_create` needs this for `dry_run`, `enabled`, `allow_empty`, `recursive`, and `exclude`). A JSON `null` counts as absent in both helpers.
 
 App delete reads `remove_ix_volumes` and SMB create reads `guest_ok` with
 `strictBool(req, field, false)`. Omitted/null means false; otherwise only JSON

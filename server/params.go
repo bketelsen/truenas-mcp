@@ -180,12 +180,6 @@ func strictStringList(req *mcp.CallToolRequest, field string) ([]string, error) 
 	return out, nil
 }
 
-func optionalSlice(req *mcp.CallToolRequest, field string) []any {
-	m := parseArgs(req)
-	v, _ := m[field].([]any)
-	return v
-}
-
 func requireObject(req *mcp.CallToolRequest, field string) (map[string]any, error) {
 	m := parseArgs(req)
 	v, ok := m[field].(map[string]any)

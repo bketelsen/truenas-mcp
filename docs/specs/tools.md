@@ -339,7 +339,7 @@ Create an NFS export.
   - `path` (string, required) — filesystem path
   - `networks` (string[], optional) — allowed networks (e.g., `192.168.1.0/24`)
   - `hosts` (string[], optional) — allowed hosts
-- Validation: `strictStringList` checks each restriction before any middleware call. A non-array (including an empty string) or an array containing a non-string is an error. Each absent key, null or empty array omits that restriction from the payload; a valid nonempty array is forwarded unchanged. If both restrictions are omitted, the Server sends only `path`, so callers must not mistake omission for an access restriction.
+- Validation: `strictStringList` checks each restriction before any middleware call. A non-array (including an empty string) or an array containing a non-string is an error. For each field independently, an omitted key, null, or an empty array omits that restriction from the payload; a valid nonempty array is forwarded unchanged. If both restrictions are omitted, the Server sends only `path`, so callers must not mistake omission for an access restriction.
 - API: `sharing.nfs.create`
 
 ### `truenas_nfs_delete` **[write]**
