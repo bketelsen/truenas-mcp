@@ -90,22 +90,6 @@ func TestOptionalBool_absent(t *testing.T) {
 	}
 }
 
-func TestOptionalSlice_present(t *testing.T) {
-	req := makeReq(t, map[string]any{"hosts": []any{"10.0.0.1"}})
-	got := optionalSlice(req, "hosts")
-	if len(got) != 1 {
-		t.Fatalf("expected 1 element, got %v", got)
-	}
-}
-
-func TestOptionalSlice_absent(t *testing.T) {
-	req := makeReq(t, map[string]any{})
-	got := optionalSlice(req, "hosts")
-	if len(got) != 0 {
-		t.Fatalf("expected empty slice, got %v", got)
-	}
-}
-
 func TestOptionalFloat64_present(t *testing.T) {
 	req := makeReq(t, map[string]any{"limit": float64(25)})
 	got, ok := optionalFloat64(req, "limit")

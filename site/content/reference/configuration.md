@@ -56,6 +56,11 @@ stdin and stdout. For Claude Code, and for clients that use the same
 }
 ```
 
+The `command` above is an example for an installed binary. Replace it with
+where you installed `truenas-mcp`. If you ran `make build` in a local clone,
+use `/absolute/path/to/clone/build/truenas-mcp` instead, replacing
+`/absolute/path/to/clone` with the clone's absolute directory.
+
 The client's configuration file then holds the API key: keep its permissions
 tight. Add `"--enable-writes"` or `"--tls-insecure"` to `args` only when you
 need them.
