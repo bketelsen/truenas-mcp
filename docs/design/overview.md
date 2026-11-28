@@ -50,7 +50,7 @@ main.go                  Entry point — uses Charm fang CLI framework
     ├── tools_protection.go  Protection report: per-dataset snapshot task coverage, newest periodic snapshot age, replication, flags (read-only; size-capped)
     ├── tools_share.go    SMB and NFS share tools + shareIDProp (signed int64 schema)
     ├── tools_alert.go    Alert list/dismiss tools
-    ├── tools_reports.go  Aggregated health report and job-list tools + shared result helpers
+    ├── tools_reports.go  Aggregated health report and job-list tools + shared result and cron schedule helpers
     ├── tools_app.go      App list/get/config/start/stop/restart/update/delete tools + update report
     ├── tools_app_configure.go  App configuration write tool (lossless deep-merge over app.config, then app.update)
     ├── app_config_json.go  Configuration-only JSON object decoder and exact numeric comparison
@@ -206,6 +206,7 @@ Read-only mode is the default. The Server always registers 24 read-only Tools; w
 `tools_reports.go` defines the shared result helpers that the tool files use:
 - `jsonValueResult()` — formats any value as pretty-printed MCP text content
 - `queryRows()` — checks one middleware query call and decodes its rows; a call error reads `<label>: <error>` and a decode error `parsing <label>: <error>`, both wrapped (used by the scrub and protection report tools)
+- `cronScheduleSummary()` — projects the five cron fields, keeping missing values as null, for the [rsync](../specs/tools.md#truenas_rsync_task_list) and [scrub](../specs/tools.md#truenas_scrub_task_list) reports
 - `callSection()` — calls one middleware method and decodes its answer into `any`, with the error returned unwrapped (used by `truenas_health_report` for each of its sections)
 
 `server/params.go` decodes MCP arguments and defines typed accessors for them:

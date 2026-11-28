@@ -158,12 +158,13 @@ func TestRsyncTaskList_Normal(t *testing.T) {
 	push["remoteport"] = 22
 	push["remotemodule"] = nil
 	push["desc"] = "web push"
-	push["schedule"] = map[string]any{"minute": "30", "hour": "3", "dom": "*", "month": "*", "dow": "*", "begin": "00:00", "end": "23:59"}
+	push["schedule"] = map[string]any{"minute": "30", "hour": "3", "dom": "2", "month": "4", "dow": "5", "begin": "00:00", "end": "23:59"}
 	push["recursive"] = true
 	push["delete"] = true
 	push["ssh_credentials"] = rsyncCredentialFixture()
 
 	disabled := rsyncTaskFixture(6)
+	delete(disabled, "schedule")
 	disabled["enabled"] = false
 	disabled["locked"] = true
 	disabled["mode"] = "SSH"
@@ -186,8 +187,8 @@ func TestRsyncTaskList_Normal(t *testing.T) {
  "summary":{"tasks_total":3,"tasks_enabled":2,"disabled_task_ids":[6],"failing_task_ids":[6],"running_task_ids":[],"locked_task_ids":[6],"never_run_task_ids":[9]},
  "tasks":[
  {"id":3,"path":"/mnt/tank/example","dataset":"tank/example","direction":"PULL","mode":"MODULE","remotehost":"backup.example.invalid","remoteport":873,"remotemodule":"archive","remotepath":"/srv/example","user":"backup","desc":"nightly pull","schedule":{"minute":"0","hour":"2","dom":"*","month":"*","dow":"*"},"enabled":true,"locked":false,"recursive":false,"delete":false,"archive":true,"ssh_credentials":null,"job":{"id":41,"state":"SUCCESS","time_started":"2026-11-20T02:00:00Z","time_finished":"2026-11-20T02:04:00Z","error":null}},
- {"id":6,"path":"/mnt/tank/example","dataset":"tank/example","direction":"PULL","mode":"SSH","remotehost":"backup.example.invalid","remoteport":22,"remotemodule":null,"remotepath":"/srv/example","user":"backup","desc":"nightly","schedule":{"minute":"0","hour":"2","dom":"*","month":"*","dow":"*"},"enabled":false,"locked":true,"recursive":false,"delete":false,"archive":false,"ssh_credentials":{"id":4,"name":"backup-key"},"job":{"id":null,"state":"FAILED","time_started":"2026-11-20T02:00:00Z","time_finished":"2026-11-20T02:04:00Z","error":"rsync exited with code 23"}},
- {"id":9,"path":"/mnt/tank/example/site","dataset":"tank/example/site","direction":"PUSH","mode":"SSH","remotehost":"backup.example.invalid","remoteport":22,"remotemodule":null,"remotepath":"/srv/example","user":"backup","desc":"web push","schedule":{"minute":"30","hour":"3","dom":"*","month":"*","dow":"*"},"enabled":true,"locked":false,"recursive":true,"delete":true,"archive":false,"ssh_credentials":{"id":4,"name":"backup-key"},"job":null}],
+ {"id":6,"path":"/mnt/tank/example","dataset":"tank/example","direction":"PULL","mode":"SSH","remotehost":"backup.example.invalid","remoteport":22,"remotemodule":null,"remotepath":"/srv/example","user":"backup","desc":"nightly","schedule":{"minute":null,"hour":null,"dom":null,"month":null,"dow":null},"enabled":false,"locked":true,"recursive":false,"delete":false,"archive":false,"ssh_credentials":{"id":4,"name":"backup-key"},"job":{"id":null,"state":"FAILED","time_started":"2026-11-20T02:00:00Z","time_finished":"2026-11-20T02:04:00Z","error":"rsync exited with code 23"}},
+ {"id":9,"path":"/mnt/tank/example/site","dataset":"tank/example/site","direction":"PUSH","mode":"SSH","remotehost":"backup.example.invalid","remoteport":22,"remotemodule":null,"remotepath":"/srv/example","user":"backup","desc":"web push","schedule":{"minute":"30","hour":"3","dom":"2","month":"4","dow":"5"},"enabled":true,"locked":false,"recursive":true,"delete":true,"archive":false,"ssh_credentials":{"id":4,"name":"backup-key"},"job":null}],
  "notes":["Schedules run in the Appliance's local time.","job is the running or queued job of the task, else the last finished job TrueNAS stored when the job ended; null means no run is recorded.","locked true means the task path is in a locked encrypted dataset, so TrueNAS skips the run.","An SSH credential shows only its id and name, and extra options are not returned."]}`
 	var want map[string]any
 	if err := json.Unmarshal([]byte(expected), &want); err != nil {

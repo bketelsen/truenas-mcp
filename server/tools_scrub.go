@@ -79,12 +79,11 @@ func scrubReport(tasks, pools []map[string]any, poolIDs map[any]bool, now time.T
 		if task["enabled"] == true {
 			enabled++
 		}
-		schedule, _ := task["schedule"].(map[string]any)
 		taskOut = append(taskOut, map[string]any{
 			"id": task["id"], "pool": task["pool"], "pool_name": task["pool_name"],
 			"threshold_days": task["threshold"], "description": task["description"],
 			"enabled": task["enabled"], "pool_found": found,
-			"schedule": map[string]any{"minute": schedule["minute"], "hour": schedule["hour"], "dom": schedule["dom"], "month": schedule["month"], "dow": schedule["dow"]},
+			"schedule": cronScheduleSummary(task["schedule"]),
 		})
 	}
 	for _, pool := range pools {
