@@ -117,7 +117,6 @@ func rsyncTaskID(req *mcp.CallToolRequest) (int, bool, error) {
 // ssh_credentials.attributes, `extra`, the times/compress/archive family and
 // `relative_path` stay with the middleware.
 func rsyncTaskSummary(e map[string]any) map[string]any {
-	schedule, _ := e["schedule"].(map[string]any)
 	return map[string]any{
 		"id":              e["id"],
 		"path":            e["path"],
@@ -130,7 +129,7 @@ func rsyncTaskSummary(e map[string]any) map[string]any {
 		"remotepath":      e["remotepath"],
 		"user":            e["user"],
 		"desc":            e["desc"],
-		"schedule":        map[string]any{"minute": schedule["minute"], "hour": schedule["hour"], "dom": schedule["dom"], "month": schedule["month"], "dow": schedule["dow"]},
+		"schedule":        cronScheduleSummary(e["schedule"]),
 		"enabled":         e["enabled"],
 		"locked":          e["locked"],
 		"recursive":       e["recursive"],

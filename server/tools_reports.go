@@ -36,6 +36,12 @@ func queryRows(label string, raw json.RawMessage, err error) ([]map[string]any, 
 	return rows, nil
 }
 
+// cronScheduleSummary keeps only the five cron fields, with nulls for missing values.
+func cronScheduleSummary(value any) map[string]any {
+	schedule, _ := value.(map[string]any)
+	return map[string]any{"minute": schedule["minute"], "hour": schedule["hour"], "dom": schedule["dom"], "month": schedule["month"], "dow": schedule["dow"]}
+}
+
 // callSection calls one health report section and decodes its answer.
 func callSection(client truenas.Caller, method string, params ...interface{}) (any, error) {
 	result, err := client.Call(method, params...)

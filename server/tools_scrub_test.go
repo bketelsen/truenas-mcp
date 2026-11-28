@@ -20,7 +20,7 @@ func fixedScrubClock(t *testing.T) time.Time {
 
 func scrubFixtureTask(id, pool int, name string, enabled bool, threshold int) map[string]any {
 	return map[string]any{"id": id, "pool": pool, "pool_name": name, "threshold": threshold, "description": "monthly", "enabled": enabled,
-		"schedule": map[string]any{"minute": "0", "hour": "3", "dom": "1", "month": "*", "dow": "*", "secret": "omit"}, "secret": "omit"}
+		"schedule": map[string]any{"minute": "0", "hour": "3", "dom": "1", "month": "4", "dow": "5", "secret": "omit"}, "secret": "omit"}
 }
 
 func scrubFixtureScan(now time.Time, age time.Duration) map[string]any {
@@ -68,14 +68,15 @@ func callScrubFixture(t *testing.T, tasks, pools []map[string]any, args map[stri
 func TestScrubTaskList_Normal(t *testing.T) {
 	now := fixedScrubClock(t)
 	tasks := []map[string]any{scrubFixtureTask(9, 2, "beta", false, 35), scrubFixtureTask(3, 1, "alpha", true, 35), scrubFixtureTask(1, 1, "alpha", true, 50)}
+	tasks[1]["schedule"] = "not an object"
 	pools := []map[string]any{{"id": 2, "name": "beta", "scan": nil}, {"id": 1, "name": "alpha", "scan": scrubFixtureScan(now, 36*24*time.Hour+8*time.Hour), "secret": "omit"}}
 	got := callScrubFixture(t, tasks, pools, nil)
 	expected := `{
  "summary":{"generated_at":"2026-11-20T12:00:00Z","tasks_total":3,"tasks_enabled":2,"pools_total":2,"pools_without_enabled_task":["beta"],"pools_past_threshold":["alpha"],"pools_without_finished_scrub":["beta"],"tasks_unknown_pool":[]},
  "tasks":[
- {"id":1,"pool":1,"pool_name":"alpha","threshold_days":50,"description":"monthly","enabled":true,"pool_found":true,"schedule":{"minute":"0","hour":"3","dom":"1","month":"*","dow":"*"}},
- {"id":3,"pool":1,"pool_name":"alpha","threshold_days":35,"description":"monthly","enabled":true,"pool_found":true,"schedule":{"minute":"0","hour":"3","dom":"1","month":"*","dow":"*"}},
- {"id":9,"pool":2,"pool_name":"beta","threshold_days":35,"description":"monthly","enabled":false,"pool_found":true,"schedule":{"minute":"0","hour":"3","dom":"1","month":"*","dow":"*"}}],
+ {"id":1,"pool":1,"pool_name":"alpha","threshold_days":50,"description":"monthly","enabled":true,"pool_found":true,"schedule":{"minute":"0","hour":"3","dom":"1","month":"4","dow":"5"}},
+ {"id":3,"pool":1,"pool_name":"alpha","threshold_days":35,"description":"monthly","enabled":true,"pool_found":true,"schedule":{"minute":null,"hour":null,"dom":null,"month":null,"dow":null}},
+ {"id":9,"pool":2,"pool_name":"beta","threshold_days":35,"description":"monthly","enabled":false,"pool_found":true,"schedule":{"minute":"0","hour":"3","dom":"1","month":"4","dow":"5"}}],
  "pools":[{"id":1,"name":"alpha","scrub_task_ids":[1,3],"last_scan":{"function":"SCRUB","state":"FINISHED","start_time":"2026-10-15T03:00:00Z","end_time":"2026-10-15T04:00:00Z","errors":0},"days_since_last_scrub":36.3,"past_threshold":true},
  {"id":2,"name":"beta","scrub_task_ids":[9],"last_scan":null,"days_since_last_scrub":null,"past_threshold":false}],
  "notes":["last_scan is the most recent scrub or resilver, so a resilver hides the last scrub date.","past_threshold uses the TrueNAS 27.0 rule: the next scheduled run of the task starts a scrub when the last finished scrub ended more than threshold - 1 days ago.","For a pool without a finished scrub, TrueNAS reads the pool history instead: the next scheduled run starts a scrub unless a zpool create, import or scrub falls inside the threshold window. This tool cannot see that history, so such a pool is listed in pools_without_finished_scrub and never in pools_past_threshold.","Schedules run in the Appliance's local time."]}`

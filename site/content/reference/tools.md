@@ -143,7 +143,8 @@ Pool's last scan. The summary lists Pools without an enabled task, Pools past
 threshold, Pools without a finished scrub, and task ids with an unknown Pool.
 A resilver hides the last scrub date. For a Pool without a finished scrub,
 TrueNAS decides from the pool history, which this tool cannot see. Schedules
-run in the Appliance's local time.
+run in the Appliance's local time. The `schedule` object always includes
+`minute`, `hour`, `dom`, `month`, and `dow`; missing values are null.
 
 Parameters: `pool` (exact Pool name).
 
@@ -152,7 +153,9 @@ Parameters: `pool` (exact Pool name).
 rsync tasks with direction, mode, local path and Dataset, remote host, port,
 module and path, schedule, flags, enabled state and the state of the job. The
 summary lists the ids of disabled, failing, running, locked and never-run
-tasks. An SSH credential shows only its id and name.
+tasks. An SSH credential shows only its id and name. The `schedule` object
+always includes `minute`, `hour`, `dom`, `month`, and `dow`; missing values
+are null.
 
 Parameters: `id`.
 
